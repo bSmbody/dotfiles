@@ -6,6 +6,8 @@ brew "eza"
 brew "fd"
 # Command-line fuzzy finder written in Go
 brew "fzf"
+# GitHub command-line tool
+brew "gh"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Search tool like grep and The Silver Searcher
@@ -16,7 +18,9 @@ brew "tldr"
 brew "tmux"
 # Display directories as trees (with optional color/HTML output)
 brew "tree"
+vscode "charliermarsh.ruff"
 vscode "daltonmenezes.aura-theme"
+vscode "eamodio.gitlens"
 vscode "formulahendry.code-runner"
 vscode "mechatroner.rainbow-csv"
 vscode "ms-ceintl.vscode-language-pack-zh-hans"

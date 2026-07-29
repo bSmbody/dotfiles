@@ -16,3 +16,8 @@ export PATH="$HOME/.npm-global/bin:$PATH"
 
 # Claude Code CLI
 export PATH="$HOME/.claude/bin:$PATH"
+
+# VS Code 的 code 命令
+# brew 装 cask 时只放 App，不注册命令行工具，得自己加。
+# git 的 core.editor = "code --wait" 依赖这条，缺了会导致 git commit 直接失败。
+export PATH="/Applications/Visual Studio Code.app/Contents/Resources/app/bin:$PATH"

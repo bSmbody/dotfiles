@@ -48,17 +48,10 @@ if ! command -v brew >/dev/null 2>&1; then
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
+# Brewfile 里的 vscode "…" 行由 brew bundle 自己处理，不需要额外脚本。
+# 注意：dump 时若 code 不在 PATH，brew 会静默丢掉所有 vscode 行。
+# 更新 Brewfile 后务必 git diff 确认，别盲目提交。
 brew bundle --file="$DOTFILES/Brewfile"
-
-echo "==> 安装 VS Code 扩展"
-if command -v code >/dev/null 2>&1; then
-  # grep -v '^#' 去掉注释行，grep -v '^$' 去掉空行
-  grep -v '^#' "$DOTFILES/vscode/extensions.txt" | grep -v '^$' | while read -r ext; do
-    code --install-extension "$ext" --force
-  done
-else
-  echo "  未找到 code 命令，跳过。（VS Code 里 Cmd+Shift+P → Install 'code' command）"
-fi
 
 echo
 echo "完成。开一个新终端窗口，或执行：source ~/.zprofile && source ~/.zshrc"

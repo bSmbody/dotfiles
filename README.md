@@ -20,7 +20,8 @@ git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles
 | `zsh/zshrc` | `~/.zshrc` | 别名、补全、历史（每个 shell 都执行） |
 | `git/gitconfig` | `~/.gitconfig` | git 全局配置 |
 | `tmux/tmux.conf` | `~/.tmux.conf` | tmux 键位 |
-| `Brewfile` | — | 工具清单，`brew bundle` 用 |
+| `vscode/settings.json` | `~/Library/Application Support/Code/User/settings.json` | 编辑器配置 |
+| `Brewfile` | — | 工具 **与 VS Code 扩展** 清单，`brew bundle` 用 |
 
 ## 为什么用软链接而不是复制
 
@@ -31,8 +32,14 @@ git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles
 
 ```bash
 brew install <工具>
-cd ~/dotfiles && brew bundle dump --force && git commit -am "add <工具>"
+cd ~/dotfiles
+brew bundle dump --force
+git diff Brewfile      # 必看：确认只有新增，没有意外删除
+git add -p && git commit
 ```
+
+`git diff` 那步不能省。`brew bundle dump` 若在 `code` 不在 PATH 的 shell 里执行，
+会静默删掉全部 `vscode "…"` 行，而你要到换机器还原时才会发现扩展全没了。
 
 ## 待办
 
