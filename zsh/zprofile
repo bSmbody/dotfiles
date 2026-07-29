@@ -1,0 +1,18 @@
+# ~/.zprofile — 登录 shell 启动时执行一次
+# 只放"设一次就够"的东西：PATH、环境变量。
+# 别名/提示符/补全放 zshrc（那个每开一个 shell 都会执行）。
+
+# Homebrew（Apple Silicon 装在 /opt/homebrew，不是 Intel 的 /usr/local）
+# 不写死 export，让 brew 自己报告它需要什么 —— 换机器/升级都不用改这里
+eval "$(/opt/homebrew/bin/brew shellenv zsh)"
+
+# Java（temurin-25）
+# java_home 是 macOS 自带工具，返回当前默认 JDK 路径
+export JAVA_HOME=$(/usr/libexec/java_home)
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# npm 全局包（把全局目录放家目录下，避免 sudo npm -g）
+export PATH="$HOME/.npm-global/bin:$PATH"
+
+# Claude Code CLI
+export PATH="$HOME/.claude/bin:$PATH"

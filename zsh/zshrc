@@ -1,0 +1,31 @@
+# ~/.zshrc — 每个交互式 shell 都执行
+# 放别名、提示符、补全、键位。PATH 类的放 zprofile。
+
+# ---------- 历史 ----------
+HISTSIZE=50000            # 内存中保留条数
+SAVEHIST=50000            # 写入文件条数（zsh 默认才 1000，太少）
+setopt SHARE_HISTORY      # 多个终端窗口共享历史
+setopt HIST_IGNORE_DUPS   # 连续重复的命令只记一次
+setopt HIST_IGNORE_SPACE  # 空格开头的命令不记录（临时敲敏感内容时用）
+
+# ---------- 补全 ----------
+autoload -Uz compinit && compinit
+setopt AUTO_CD            # 直接敲目录名就 cd 进去
+
+# ---------- fzf ----------
+# Ctrl+R 模糊搜历史，Ctrl+T 模糊选文件，Alt+C 模糊 cd
+source <(fzf --zsh)
+
+# ---------- 别名 ----------
+# 刻意不覆盖 ls / cat / grep / find 本身。
+# 你早晚要 ssh 到一台没装这些工具的服务器，
+# 覆盖原生命令会让你在那种时候手足无措。新增名字，不夺舍。
+alias ll='eza -l --git'         # 长列表 + git 状态
+alias la='eza -la --git'        # 含隐藏文件
+alias lt='eza --tree --level=2' # 目录树
+
+alias gs='git status -sb'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -20'
+
+alias dot='cd ~/dotfiles'       # 随时回来改配置
