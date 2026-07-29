@@ -30,6 +30,7 @@ link() {
     echo "  已备份  $2 → $BACKUP/"
   fi
 
+  mkdir -p "$(dirname "$dst")"   # VS Code 那类深层路径，目标目录可能还不存在
   ln -s "$src" "$dst"
   echo "  已链接  $2"
 }
@@ -39,6 +40,7 @@ link zsh/zshrc      .zshrc
 link zsh/zprofile   .zprofile
 link git/gitconfig  .gitconfig
 link tmux/tmux.conf .tmux.conf
+link vscode/settings.json "Library/Application Support/Code/User/settings.json"
 
 echo "==> 安装 Homebrew 与工具"
 if ! command -v brew >/dev/null 2>&1; then
@@ -47,6 +49,16 @@ if ! command -v brew >/dev/null 2>&1; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 brew bundle --file="$DOTFILES/Brewfile"
+
+echo "==> 安装 VS Code 扩展"
+if command -v code >/dev/null 2>&1; then
+  # grep -v '^#' 去掉注释行，grep -v '^$' 去掉空行
+  grep -v '^#' "$DOTFILES/vscode/extensions.txt" | grep -v '^$' | while read -r ext; do
+    code --install-extension "$ext" --force
+  done
+else
+  echo "  未找到 code 命令，跳过。（VS Code 里 Cmd+Shift+P → Install 'code' command）"
+fi
 
 echo
 echo "完成。开一个新终端窗口，或执行：source ~/.zprofile && source ~/.zshrc"

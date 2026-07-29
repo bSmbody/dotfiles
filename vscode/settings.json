@@ -1,0 +1,39 @@
+{
+  // 起步配置，刻意保持少。用顺手了缺什么再加，别一上来堆一百行。
+
+  // ---------- 编辑器 ----------
+  "editor.formatOnSave": true,        // 保存即格式化：从此不再有"格式改动"污染 diff
+  "editor.rulers": [88],              // 88 是 ruff/black 的默认行宽，S1 会用到
+  "editor.renderWhitespace": "boundary",
+  "editor.tabSize": 4,
+  "editor.minimap.enabled": false,    // 缩略图占地方，实际很少看
+
+  // ---------- 文件 ----------
+  "files.trimTrailingAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,   // 文件末尾留空行是 POSIX 惯例，不留会让 diff 变丑
+  "files.eol": "\n",                  // 强制 LF，避免和 Linux 服务器换行符打架
+
+  // ---------- Git ----------
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "diffEditor.ignoreTrimWhitespace": false,
+
+  // ---------- 终端 ----------
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.fontSize": 13,
+
+  // ---------- Python（S1 起主力语言）----------
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+
+  // ---------- 其它 ----------
+  "workbench.startupEditor": "none",
+  "telemetry.telemetryLevel": "off",
+  "gitlens.ai.model": "vscode",
+  "gitlens.ai.vscode.model": "copilotcli:"
+}
