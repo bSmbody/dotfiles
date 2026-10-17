@@ -1,0 +1,14 @@
+# Training-free motion quality in text-to-video diffusion transformers
+
+## Problem definition
+Given a pretrained text-to-video diffusion or flow-matching transformer (e.g. Wan2.1-T2V-1.3B, CogVideoX-2B, LTX-Video) and a text prompt, change only the sampling procedure — no weight updates — so that the generated video shows the amount and kind of motion the prompt asks for, with coherent object and camera dynamics, while keeping per-frame visual quality and text alignment. Input: prompt, frozen model, sampler, and an inference budget (number of function evaluations). Output: a video. Typical evaluation: VBench dynamic degree / motion smoothness / subject consistency, optical-flow statistics, VideoAlign-style preference scores, and a small human study.
+
+## Challenge
+Open text-to-video models often produce under-animated clips (near-static scenes, a slowly drifting camera) or incoherent motion (limbs morphing, objects appearing or merging, flicker). Coarse motion is fixed in the first few denoising steps, when the model's clean-video prediction is still blurry, and standard classifier-free guidance trades motion against frame quality. Existing training-free fixes — re-initialising low-frequency noise, reweighting temporal attention, guiding with a motion prior or with the model's own prediction variance — either have no target for what the motion should be, need several extra full sampling passes, or are tuned per model and transfer poorly. Concrete failure: "a dog running across a beach" from a 1.3B model gives a dog trotting in place over a sliding background, and raising the guidance scale makes it sharper but no more dynamic.
+
+## Constraints
+- **Venue and deadline**: CVPR 2027 main track. Paper deadline 2026-11-16 AoE (registration 2026-11-10). Today is 2026-10-17, so every experiment must finish by about 2026-11-09: roughly three weeks of compute.
+- **Compute**: at most 2–4 consumer GPUs with 24 GB each (RTX 3090 / 4090) on a shared lab cluster; no NVLink, no multi-node; single-GPU jobs. The whole paper (method, baselines, ablations, evaluation) must fit in ≤ 40 GPU-days. In practice: training-free / inference-time methods, or light fine-tuning (e.g. LoRA, ≤ 2 GPU-days per run) of public pretrained models that fit in 24 GB (diffusion/flow models up to ~3B parameters in bf16; larger ones only for inference with offloading; VLMs up to ~8B).
+- **Team and assets**: a small group experienced with diffusion transformers and RL post-training. Already deployed: Wan2.1-T2V-1.3B, Flow-GRPO training code, HPSv3, VideoAlign, RAFT optical flow, VBench evaluation. Assets are a plus, not a requirement.
+- **Evaluation**: public benchmarks and metrics computable within the budget; at most a small human study (~150 pairwise judgements).
+- **Literature**: no cutoff — search up to today. arXiv work from the last 12 months counts as prior or concurrent work for novelty.
