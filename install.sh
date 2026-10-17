@@ -41,6 +41,7 @@ link zsh/zprofile   .zprofile
 link git/gitconfig  .gitconfig
 link tmux/tmux.conf .tmux.conf
 link vscode/settings.json "Library/Application Support/Code/User/settings.json"
+link claude/skills/idea-scientist .claude/skills/idea-scientist
 
 echo "==> 安装 Homebrew 与工具"
 if ! command -v brew >/dev/null 2>&1; then

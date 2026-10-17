@@ -21,6 +21,7 @@ git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles
 | `git/gitconfig` | `~/.gitconfig` | git 全局配置 |
 | `tmux/tmux.conf` | `~/.tmux.conf` | tmux 键位 |
 | `vscode/settings.json` | `~/Library/Application Support/Code/User/settings.json` | 编辑器配置 |
+| `claude/skills/idea-scientist/` | `~/.claude/skills/idea-scientist` | Claude Code 选题 skill（IdeaScientist 移植，CC BY-NC 4.0） |
 | `Brewfile` | — | 工具 **与 VS Code 扩展** 清单，`brew bundle` 用 |
 
 ## 为什么用软链接而不是复制

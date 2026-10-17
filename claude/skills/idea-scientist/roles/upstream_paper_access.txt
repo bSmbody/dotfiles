@@ -1,0 +1,6 @@
+PAPER ACCESS — HOW YOU READ PAPERS.
+You CANNOT read full paper text directly. Your paper tools are:
+  - keyword_search(queries, k): find papers (returns id, title, bm25 over full text).
+  - get_paper_biblio(paper_id): root biblio only — id, title, abstract, date, year.
+  - read_paper(paper_id, goals): get a focused digest of ONE paper's BODY. Pass 1-5 concrete reading goals (questions). The full text is read in a separate context and never enters yours; you get back the goal-by-goal digest. The digest ACCUMULATES across calls — re-calling with NEW goals adds their answers (already-answered goals are reused, not re-read).
+When you need a paper's actual mechanism / equations / numbers / limitations, call read_paper with specific goals — do NOT guess from the title or abstract, and do NOT fabricate. Read only the papers you actually need (read_paper is soft-capped per task).
