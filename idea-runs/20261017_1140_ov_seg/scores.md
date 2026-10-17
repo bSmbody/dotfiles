@@ -28,3 +28,58 @@
   - A location-level retirement statistic and its cost accounting. One option is DS run over locations on "max over non-argmax classes of (score − that class's own background quantile)". Another is image-level class elimination first, so that per-location competitor sets shrink before zooming.
   - A cross-scale fusion rule to replace "finest look wins".
   - Explicit positioning against MagNet, CaR and ActiveSAM, and a stated reason to target CLIP pipelines rather than SAM 3 ones, or a demonstration on both.
+
+
+### C2 verdict
+
+- **Verdict**: `revise(focus=mapping)`
+- **Evidence**:
+  - **Source grounding is accurate.**
+    - [2106.12193]: a test returns the OR of its items' defectiveness. Hwang's binary splitting discards every negative partition in one step and binary-searches the positive ones, using k·log2(n/k) + O(k) tests when k = o(n). Noise is handled by noisy binary search and by repeated tests that certify defectives. C2 states all of this correctly.
+    - [2008.06642]: dilution lowers a pool's sensitivity as the pool grows, and false negatives from weak samples are correlated across pools. Also stated correctly.
+    - The fusion sources are quoted correctly:
+      - SNIP's valid range per scale [1711.08189];
+      - AutoFocus's pruning of detections at chip borders [1812.01600];
+      - Thm 4 of [2610.09313] (no zoom-out, each crop contains the item's support) and its Prop 8–9 (adaptive zoom saves cost only if coarse views carry graded evidence below one token). Half-recall falls at or below 0.54 tokens per side for all but one of the MLLMs tested.
+    - The SAM 3 facts check out:
+      - The presence token is "solely responsible" for presence and is kept apart from local localisation. The input is a fixed 1008 square that ignores aspect ratio [2511.16719].
+      - ActiveSAM, SegEarth-OV3 and ProC-SAM3 all resize to 1008×1008, and none of them re-encodes a region [2606.16996, 2512.08730, 2606.21863].
+  - **The mapping breaks at the test, which is not an OR over defectives.**
+    - In group testing a pool is positive if and only if it holds at least one defective [2106.12193]. C2's defective is "the concept is present here but missing from the map". Its test, however, is "the presence head fires AND the concept holds none of the pixels where its own dense evidence peaks in the crop".
+    - The presence head fires for any instance of the concept, found or missed [2511.16719]. So one correctly labelled instance of the same class inside the pool makes the concept "explained". The crop then tests negative, and every missed instance in it is retired with the coarse label.
+    - This masking effect grows with pool size and with the number of instances per class. That is not the dilution trade-off C2 borrows from [2008.06642]; it is a separate failure that the source does not model.
+    - At the root (the base pipeline's whole view) this bites hardest. Poles, traffic signs, traffic lights and people usually appear several times in a street scene, and the base map usually labels at least the most salient one. (This is my estimate; no paper read here reports per-image instance counts.) The root test is therefore negative for exactly the classes and images the gap targets. C2 then fires only when a recognised class wins nothing anywhere in the view.
+    - If "unexplained" is read per peak instead ("some evidence peak is not held"), the decision no longer uses the pooled test at all. It becomes a location-level check on the dense map, which is C1's per-location trigger plus a presence confirmation.
+  - **On SAM 3, presence at the root carries almost no information about where to look.**
+    - Even from a 336 px preview, ActiveSAM's image-level presence admits 93.9% of the ground-truth image–class pairs from components smaller than 1,024 px. Raising the preview to 672 px moves mean mIoU by at most 0.04 [2606.16996].
+    - A test that is positive for nearly every present class, whatever the pool size, cannot narrow down the location. C2's children are in fact placed by the parent's dense evidence, as in AutoFocus [1812.01600] and ViCrop-Det [2604.26806], not by splitting the pool.
+    - So group testing contributes only a stop rule and a certification rule. The efficiency argument (one negative clears many items) rests entirely on the "explained" clause criticised above.
+  - **Novelty: using crop-level recognition of "is the concept in this view?" to decide where to zoom already exists, training-free.**
+    - ZoomEye [2411.16044] builds a quadtree over the image. It ranks each sub-patch by the model's own Yes/No confidence for "Is there a o in the sub-patch?", plus "could it be found by zooming further?". For all-instance cues it searches the whole tree and keeps every node with enough existing confidence. It has no per-pixel output, no notion of what a current map already explains, and no rule for which view is authoritative. C2 does not cite it.
+    - Against ZoomEye and the in-domain work, C2's real delta is two things: (i) the map-residual trigger and (ii) the "coarsest valid view decides" fusion. The in-domain work differs as follows:
+      - ActiveSAM: presence once per image, no crops [2606.16996].
+      - SegEarth-OV3: presence per uniform window, used only to suppress categories [2512.08730].
+      - ViCrop-Det: one class-agnostic crop stage, fused by NMS [2604.26806].
+    - This delta is real. My searches (SAM 3 OVSS, and zoom, crop or tiling for open-vocabulary segmentation, with a 2025-06 recency pass) found no SAM 3 pipeline that re-encodes selected regions. But (i) is exactly the part whose mapping is wrong.
+  - **The fusion rule is well grounded and fixes C1's "finest look wins".**
+    - Three sources together justify "a zoom may only add its parent's flagged concept, on segments it resolves and contains": SNIP's valid range [1711.08189], AutoFocus's border pruning [1812.01600] and the containment condition of Thm 4 [2610.09313].
+    - One consequence should be stated. The rule cannot widen or complete a thin instance that the coarse map already labels, because the concept is "explained" there. Gains are therefore limited to wholly missed segments. The gap's recovery rate measures exactly that, but Cityscapes pole and sign IoU also depends on found instances that are under-segmented.
+  - **The transfer assumption is named but supported only indirectly.**
+    - C2 states the condition it needs: coarse views carry graded evidence about targets smaller than a token. It supports this with Prop 8–9 and MLLM recall curves from [2610.09313], but no measurement exists for SAM 3.
+    - On the hallucination side, partial support comes from SegEarth-OV3. On very large remote-sensing images, its per-window presence filtering "effectively eliminates localized false positives" [2512.08730].
+  - **The cheapest competitor is missing from the baselines.**
+    - Aspect-preserving uniform tiling with two 1024×1024 tiles undoes Cityscapes' 2× horizontal squeeze for one extra pass.
+    - C2's worst case equals uniform tiling at the depth cap, and its fusion rule can be added to uniform tiling as well. The ablations must therefore show that the gate buys the gain, not the zoom or the fusion rule. Two needed ablations: uniform tiling with the same fusion rule, and presence-ranked search (ZoomEye-style) without the residual gate.
+  - **Contribution type and feasibility pass.**
+    - C2 is an inference-time algorithm on frozen SAM 3. SAM 3 has about 850M parameters [2511.16719] and runs on one 24 GB RTX 4090 [2606.21863].
+    - A crop test needs presence only for the flagged concepts, and the worst case is bounded by uniform tiling. The method fits the 40 GPU-day budget.
+- **Strongest objection in 1 sentence**: C2's pooled test ("the presence head fires and the concept holds none of its evidence peaks in the crop") is not the OR over defectives that group testing needs, because one correctly labelled pole in a crop makes the class "explained" and retires every missed pole in that crop; so on street scenes with several poles, signs or people the root test is negative exactly where the gap lives, while the presence head, which already admits about 94% of small components at image level [2606.16996], adds no localisation of its own.
+- **What a revision must specify**:
+  - **A residual pooled test** whose positive means "at least one unexplained instance of the concept is in this crop". Two options:
+    - Query presence on the crop with that concept's already-labelled segments masked out, using a visual-prompt edit such as CaR's gray-background prompt [2312.07661]. This restores the OR-over-defectives mapping. The cost of the masked context must be checked.
+    - Compare SAM 3's per-query instance hypotheses against the map and flag the uncovered ones. This turns C2 into detection-guided zoom, which must then be positioned against ViCrop-Det [2604.26806] and AutoFocus [1812.01600].
+  - **Positioning against ZoomEye** [2411.16044]: say that crop-level recognition as the zoom criterion is borrowed, and that the contribution is the residual trigger plus per-pixel authority fusion for dense OVSS.
+  - **The matched baselines**:
+    - aspect-preserving uniform tiling;
+    - uniform tiling at the depth cap with the same fusion rule;
+    - presence-ranked search without the residual gate.
