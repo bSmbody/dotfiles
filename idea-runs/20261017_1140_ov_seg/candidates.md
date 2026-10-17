@@ -131,3 +131,94 @@
   - The concurrent theory [2610.09313] gives a uniform safe tiling rule for VLM enumeration and proposes no dense open-vocabulary method.
 
 - **Main risk**: The remaining thin-class error of SAM 3 pipelines may be a recognition limit rather than a sampling one. If zoomed crops do not make SAM 3 segment the poles, signs and lights that the squeezed 1008 px view missed (recovery rate near zero), C2 has nothing to add, and if crop-level presence also hallucinates in context-poor crops, its cost drifts toward uniform tiling with no accuracy gain.
+
+
+### C3 — Residual pooled tests: remove what the map already explains, then ask the model whether the concept is still there
+
+- **Intuition**: Before asking the frozen model "is this concept anywhere in this crop?", delete from the crop every segment the current label map already assigns to that concept, as group testing removes a found defective from its pool before re-testing it. A "yes" then means "at least one unexplained instance is still here". Only such crops are split and zoomed; every "no" retires the crop. The looks are fused coarse-first, so a zoomed view can add a wholly missed thin structure but never relabel anything else.
+
+- **Gap it attacks**: Axis "small objects and stuff classes in training-free open-vocabulary segmentation", Gap 1 (no stage re-queries the vision-language model where, and at the scale at which, evidence is ambiguous).
+  - **CLIP pipelines.** Every refiner redistributes one pass conditioned on its argmax: LPOSS+ [2503.19777], PixelUp [2608.02792], PEARL [2603.21528] and Trident [2411.09219].
+  - **SAM 3 pipelines, the training-free state of the art** (ActiveSAM 66.0 average, 73.0 on Cityscapes [2606.16996]). They squeeze every image into one 1008×1008 input [2511.16719, 2606.16996, 2512.08730]. Their semantic head "blurs the boundaries of small targets or misses them entirely" [2512.08730], and none re-encodes a selected region at higher zoom [2606.21863].
+  - **The street-scene failure.** Poles, signs and people occur several times per frame, so the realistic failure is "some instances found, others absorbed into building or road". A test that asks only whether a concept is present answers yes for any instance, found or not. ActiveSAM's image-level presence [2606.16996], C2's crop test and ZoomEye's node test [2411.16044] all work this way. It therefore cannot tell a crop whose poles are all labelled from one that still hides a missed pole. That missing distinction is exactly what a "where to look again" stage needs.
+
+- **If improving prior candidate**: This improves C2 and keeps its fusion rule, which the review judged well grounded.
+  - **The test is now an OR over defectives.** C2 put found instances in the pool and then tried to subtract them through an "explained" clause. One labelled pole then retired every missed pole in the crop. C3 removes the found segments from the pool itself before testing, exactly as Hwang's splitting does (below).
+  - **The test now localises.** A crop whose instances are all labelled now tests negative, so the residual test alone decides which children of a fixed, overlapping quadtree are kept. Dense evidence is no longer used to place children.
+  - **Also new:**
+    - how the cost of the masked context is handled;
+    - the fusion rule's consequence, stated plainly;
+    - positioning against ZoomEye, ViCrop-Det, AutoFocus and the concurrent SAM 3 re-sampling work AdaCount;
+    - the three matched baselines.
+
+- **Source inspiration**: Adaptive group testing with removal of identified defectives, from information theory.
+  - **Hwang's generalized binary splitting** [2106.12193]:
+    - A pool's test is the OR of its items' defectiveness (Eq 2).
+    - A positive partition is halved recursively until one defective is isolated. The algorithm then says: "Declare the item just found as defective, remove it from the partition, and return to Step (a)". Re-testing the same partition is therefore positive if and only if another, still unidentified defective remains.
+    - Had the found item stayed in the pool, every re-test would be trivially positive and carry no information.
+    - Each defective is found once and then leaves every later pool. That is why the cost is k·log2(n/k) + O(k) tests rather than n.
+    - The noisy versions keep the same bookkeeping: they discard "all items declared defective" between rounds and certify declared defectives with repeated tests.
+  - **Dilution** [2008.06642]: a weak positive is harder to detect in a larger pool, and weak-sample misses are correlated across pools. So the root pool must not be too large, and a false negative costs far more than a false positive.
+  - **Removing a region from a vision model's input.**
+    - Pixel fills (black, mean colour, noise, blur) make CNN predictions follow the masking pattern itself.
+    - A ViT can simply drop the removed region's tokens. It then keeps predicting from the remaining content, without retraining [2204.08945].
+    - PS-RCNN, a supervised detector, applies this "erase the found, look again" step to crowds. It erases the first round's detections with instance masks so that weak, occluded people "stand out", which lifts their recall from 0.82 to 0.92 [2003.07080]. It also reports two failure modes: masks that leave part of a found instance visible cause duplicate detections, and the weak leftovers need finer resolution to be seen.
+
+  Novelty type: recombination-of-distant-concepts.
+
+- **How it maps to this problem**:
+  - **Items and defectives.** Items are image locations. A defective is a location where a concept is present but missing from the current label map. A "declared defective" is a segment the map already labels with that concept, either from the base pass or from an earlier zoom.
+  - **The pool and its test.** A pool is a crop. The test is the frozen model's own crop-level recognition of the concept: SAM 3's presence head, which is "solely responsible" for whether a concept is in its input [2511.16719], or CLIP's image-level score for the crop.
+  - **Removing found segments.** Before the crop is encoded, the found segments of the concepts under test are deleted. Their tokens are dropped from the ViT, following [2204.08945], with a one-token margin so that no sliver of a found instance stays visible [2003.07080]. Pixel fill is the fallback.
+    - One masked pass per crop serves all tested concepts.
+    - Only concepts whose found segments are a minority of the crop are tested. Large objects and stuff that fill the crop are never removed and never tested there.
+  - **Root pools.** The roots are aspect-preserving tiles of the base view, for example two 1008 px squares for a 2048×1024 Cityscapes frame instead of one squeezed square. The tile size is the dilution-limited pool size.
+  - **Splitting.** A positive (crop, concept) pair spawns the overlapping quadrant children of that crop. Each child is encoded at twice the zoom with its own found segments removed, then tested again. Negative children retire, and positive ones recurse up to a depth cap.
+    - The overlap guarantees that a target small enough for a child lies wholly inside one child, the containment condition of [2610.09313].
+    - Under a per-image budget, positive children are expanded in order of their residual presence score.
+  - **Certification and the re-detection guard.**
+    - A concept is written only where a child both tests positive and decodes a segment for it.
+    - A segment that overlaps the removed area is a re-detection of a found instance and is dropped.
+  - **Fusion: the coarsest valid view decides (kept from C2).** A zoomed view is authoritative only for segments it resolves and fully contains with a margin. This combines SNIP's valid range [1711.08189], AutoFocus's border pruning [1812.01600] and Thm 4 of [2610.09313]. A zoomed view may write only the concept its parent flagged. Everything else keeps its label from the coarsest view.
+  - **Consequence of the fusion rule.** It only adds segments that are disjoint from what the map already labels with that concept: wholly missed instances, or wholly missed pieces of partly found ones. It never thickens, extends into or relabels an existing segment.
+    - So under-segmented but found poles, and boundary IoU in general, stay the job of the base pipeline or a later refiner such as LPOSS+ [2503.19777].
+    - Stuff keeps its context-rich label, except where a certified small segment is written over it.
+  - **Placement.** C3 runs on top of ActiveSAM or SegEarth-OV3 as the main instantiation, or on CLIP first-pass methods, and before any refiner.
+
+- **Why it could work / feasibility**:
+  - **Group testing's conditions.**
+    - *Sparsity (k ≪ n).* Small objects are 40% of COCO instances but 0.3% of the image area [1812.01600]. A further sparsity gain is specific to the residual test: crops whose instances are all already labelled now drop out, which unmasked presence could not achieve.
+    - *Removal really removes.* For ViTs, token dropping deletes a region without the fill artifacts that make predictions follow the mask [2204.08945]. Both SAM 3's Perception Encoder [2511.16719] and CLIP are ViTs. In PS-RCNN, masking the input image and masking the feature maps give almost the same result (recall 95.40 vs 95.11) [2003.07080], so removal at the input is not a weaker substitute.
+  - **The cost of the masked context is bounded, and the unbounded case is the one avoided.** CaR shows that deleting large context (blacking out everything outside a mask) costs CLIP about 5 mIoU against context-preserving prompts [2312.07661]. C3 deletes only the found segments of minority concepts, typically thin or small structures, and never stuff. The dominant scene context therefore stays in view.
+    - What is lost: when testing one concept, its own other instances and the found instances of the other tested concepts (for example the pole a sign hangs on) are no longer visible as context.
+    - Residual leakage, for example a token hole that looks like a pole, only costs compute: the hole's pixels are already labelled, and the re-detection guard drops any segment on them.
+  - **The key assumption: presence is more sensitive than decoding for small instances, even after the found ones are removed.**
+    - SAM 3 separates recognition, which uses whole-image context, from local localisation [2511.16719]. SegEarth-OV3 locates the small-target failure in the semantic head [2512.08730]. So a missed instance can be a decoding loss while presence still sees it.
+    - Coarse views carry graded evidence below one token per object side for most MLLMs tested [2610.09313], and adaptive zoom can only save cost when that holds.
+    - PS-RCNN shows that erasing found instances and adding resolution are complementary for weak instances [2003.07080], which is exactly the combination C3 uses.
+    - Dilution makes false negatives the costly error [2008.06642], so the test reuses the lenient presence threshold that ActiveSAM shares unchanged across eight benchmarks [2606.16996]. A false positive costs one more look, and certification decides what is written.
+  - **Compute.**
+    - Cost per image: the base pass, plus one masked pass per tested crop (one backbone pass with presence and decoding for the flagged concepts only, as ActiveSAM already skips decoding for absent prompts [2606.16996]).
+    - Upper bound: uniform tiling at the depth cap.
+    - Hardware: SAM 3 has about 850M parameters [2511.16719] and runs on one 24 GB RTX 4090 [2606.21863].
+    - By my estimate, even the worst case (two root tiles and two zoom levels, 42 passes) over the eight benchmarks plus ablations fits well within 40 GPU-days. The method is training-free.
+
+- **Novelty vs. closest in-domain work**:
+  - **Closest SAM 3 OVSS work: ActiveSAM [2606.16996].** It uses presence per image (a 336 px preview, then a 1008 px re-check), always on the unedited image, to drop classes for speed, with no crops and no zoom.
+  - **Borrowed from ZoomEye [2411.16044]: crop-level recognition as the criterion for zooming.** ZoomEye ranks quadtree nodes by an MLLM's yes/no confidence that a cue is present. For all-instance cues it exhaustively visits nodes to depth 2 on unedited crops, so any node holding any instance is positive. It has no per-pixel output and no authority rule.
+  - **C3's contribution is the other two pieces:**
+    - the residual trigger, i.e. testing crops with already-explained segments removed;
+    - per-pixel authority fusion for dense OVSS.
+  - **Other near work:**
+    - AdaCount [2607.02139] re-samples SAM 3 for missed small instances by warping toward look-alikes of the found ones. It amplifies found instances rather than removing them, needs a warped pass per concept, and fails when nothing was found.
+    - SAM3Count, as described by [2607.02139], tiles by a density heuristic, pays one pass per tile and loses context in independent tiles.
+    - ViCrop-Det [2604.26806] takes one class-agnostic attention-entropy crop stage with NMS fusion, and more crops add false positives (K = 7 vs 5: mAP50 34.1 vs 38.9).
+    - AutoFocus [1812.01600] uses a supervised, class-agnostic FocusPixel head.
+    - MagNet [2104.03778] is trained and margin-triggered.
+    - PS-RCNN [2003.07080] is trained, does one suppression round and does not zoom.
+  - **Matched baselines C3 must beat:**
+    - (i) aspect-preserving uniform tiling, which is C3's own root;
+    - (ii) uniform tiling at the depth cap with the same fusion rule;
+    - (iii) presence-ranked quadtree search, ZoomEye-style, with the same budget and fusion but no removal of found segments. This isolates the residual gate.
+
+- **Main risk**: Once the found instances are removed, the missed thin instances may be too weak for SAM 3's presence head to detect at root-tile zoom, because the same dilution that made the decoder miss them also hits presence. Masked root tests would then come back negative, and C3 collapses to aspect-preserving tiling (baseline i).
