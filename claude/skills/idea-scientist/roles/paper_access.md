@@ -22,7 +22,7 @@ abstract, and do NOT fabricate. Read only the papers you actually need.
 | `get_paper_biblio(id)` | `$LIT biblio <id> [<id> ...]` — title, authors, date, comment (often the venue), abstract. |
 | `read_paper(id, goals)` | The reading procedure below. You are your own paper reader. |
 | `edit_doc view <file>` | The Read tool on `$RUN/<file>`. |
-| `edit_doc insert ... insert_line=999999` (append) | Write the block to a temp file in your scratchpad, then `$LIT append $RUN/<file> < tmpfile`. **Never** use Write or Edit on gaps.md, candidates.md, scores.md or papers/*.md: other sub-agents may be appending to the same file at the same moment, and `append` is the only locked write. |
+| `edit_doc insert ... insert_line=999999` (append) | Pipe the block straight in with a quoted heredoc: `$LIT append $RUN/<file> <<'EOF'` … `EOF`. Do not stage it in a named temp file: sub-agents share one scratchpad, and a fixed name like `gap_section.md` lets another agent's text land in your file (use `mktemp` if you must stage). **Never** use Write or Edit on gaps.md, candidates.md, scores.md or papers/*.md: other sub-agents may be appending to the same file at the same moment, and `append` is the only locked write. |
 | `edit_doc create report.json` | The Write tool on `$RUN/report.json` (only the report_writer, and only that file). |
 
 ## Reading procedure (= read_paper)
