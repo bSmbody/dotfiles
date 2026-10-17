@@ -83,3 +83,84 @@ Novelty type: reinforcing-a-weak-connection. A lock-in mechanism shown for histo
 - TPD [2607.26706] gates the CFG update per frame, but it does so to restore late events, using an LLM and a third branch.
 
 **Main risk** In T2V the static commitment may come from the model's prior and RoPE anchoring rather than from the guidance's frame-shared push. Interval Guidance's lower FLOW on Wan2.1 is consistent with this [2603.14073]. In that case, withholding the shared gain would only cost early prompt alignment, and C2 would behave like Interval Guidance on one band.
+
+
+
+### C3 — Unsticking the subject: stop amplifying CFG's frame-identical coarse push while RoPE-anchored trajectory candidates compete
+
+**Intuition** In the first denoising steps, CFG adds the same coarse layout evidence at the same screen position in every frame (the frame-shared part of the guidance difference, times the gain). RoPE spatial anchoring then turns that same-position agreement into a stationary subject, much as a GAN glues texture to a positional reference it can see ("texture sticking"). C3 withholds the extra gain from only that screen-fixed coarse term while trajectory candidates still compete, keeps the full gain on the frame-varying coarse part and on fine detail, and returns to plain CFG afterwards.
+
+**Gap it attacks** Axis "motion amplitude under classifier-free guidance in training-free video diffusion sampling", Gap 1 (one guidance gain over appearance and motion). The mechanism comes from Axis "early-step formation of coarse motion in video diffusion denoising", Gap 2 (commitment competition settled by RoPE spatial anchoring).
+- *Concrete failure:* "a dog trotting in place over a sliding background" is a subject held at fixed screen coordinates while the rest of the scene moves. Raising w scales two pushes together. The frame-varying push carries per-frame placement; the frame-identical push gives every frame the same evidence at the same coordinates. Net motion therefore stays flat ("sharper but no more dynamic"), and CFG's dynamics "cluster in a narrow range" across its hyperparameters [2603.14073]. Current zero-NFE rules give one gain to the whole difference, whether a scalar, a spatial field or a per-token value [2603.14073, 2604.26503, 2610.14153], so none can treat the two pushes differently.
+- *Missing link:* the anchoring mechanism that turns same-position evidence into stationarity was analysed in the conditional branch only [2609.23658]. Its only training-free lever, a global λ on the RoPE spatial frequencies, edits the network's positional encoding and needs manual tuning, so the main results needed LoRA; a learned per-head λ failed.
+- *Why closing it matters:* the guidance gain would become a usable motion control at plain CFG cost (2 NFE per step). Closing it would also test whether part of the stationarity that anchoring produces is manufactured by the sampler rather than by the model's prior.
+
+**If improving prior candidate**
+- *C2 weaknesses:*
+  - It borrowed lock-in from History Guidance and ALG but inverted their frequency condition. Both keep coarse shared content under guidance and withhold only fine detail [2502.06764, 2506.08456].
+  - Its "sharp conditioning image" wording mis-described what is in fact a coarse early term.
+  - Its deciding comparison lacked the arm that withholds the whole coarse band early, so it could not be told apart from FDG [2506.19713].
+  - It credited CFG-Zero*'s dynamic-degree gain to zeroing the first update.
+- *What changed:*
+  - The mechanism now rests on RoPE spatial anchoring [2609.23658] and on the positional-reference account of texture sticking [2106.12423, 2212.07413]. History Guidance and ALG are kept as analogies only, and C3 says why T2V differs.
+  - The withheld term is described as what it is: a frame-identical, screen-fixed coarse push.
+  - The window is tied to the measured candidate competition (steps 1–5 of 50 on Wan2.1-1.3B).
+  - The deciding comparison now includes the FDG-along-time arm and an interaction test with the RoPE-λ fix.
+  - CFG-Zero* is now only a baseline.
+  - C3 claims that it changes which of the model's own coarse candidates wins (stationary or displaced), not that it creates motion.
+
+**Source inspiration**
+- *Texture sticking, StyleGAN3 [2106.12423]* (GAN architecture and signal processing):
+  - StyleGAN2 glues fine detail to screen coordinates instead of to object surfaces. Its intermediate layers can see unintended positional references: borders, per-pixel noise inputs, positional encodings and aliasing.
+  - The network "has the means and motivation to amplify even the slightest amount" of such a reference into "texture motifs that are fixed in screen coordinates". A training pressure against change (path-length regularisation) also "encourages texture sticking".
+  - The fix removes the references, so that each feature's position is "exclusively inherited from the underlying coarse features".
+  - Diagnostic: the average of images over a small latent walk should be uniformly blurry. Sticking shows up as unwanted sharpness.
+- *The same failure in video [2212.07413]:* in StyleGAN-V, pixels at fixed coordinates "move little" (a "brush effect"), "interrupting the smooth flow of content across frames". Reducing the generator's dependence on absolute coordinates removes it.
+- *In-domain mechanism, RoPE spatial anchoring [2609.23658]:*
+  - In Wan2.1-T2V-1.3B, self-attention from a region concentrates on the same region of other frames, because RoPE decays with spatial offset.
+  - In steps 1–5, several candidate regions per frame compete with no clear advantage. A frame that settles early raises the confidence of same-position candidates in other frames and flips their winners (0.21 vs 0.33), leaving "the basketball ... stationary in the air".
+  - The analysis covers the conditional branch only.
+
+Principle carried over: a generator that is shown a signal fixed in screen coordinates, and has a mechanism that rewards agreement at the same coordinates, binds content to that signal. Removing the signal, not the mechanism, lets position follow the content.
+
+Novelty type: recombination-of-distant-concepts (positional-reference removal from GAN signal processing, carried to the CFG combination rule of a video DiT), plus reinforcing-a-weak-connection (RoPE anchoring and CFG have not been linked).
+
+**How it maps to this problem**
+- *Unintended positional reference* (StyleGAN2's fixed noise inputs and borders) → the frame-shared (temporal-mean) part of the CFG difference, scaled by (w − 1). By construction it is the same at each screen position in every frame. In the early window its energy sits in the coarse spatial band [2506.19713] and dominates the difference [2506.01144]. It works like a long-exposure image of the prompt's layout evidence, written into every frame at the same place.
+- *The network's means to amplify it* (amplification of aliasing across scales) → RoPE spatial anchoring, the same-position preference of cross-frame self-attention that decides which trajectory candidate wins [2609.23658]. A frame-identical term makes every frame's content agree exactly at zero offset, which is where RoPE already puts the most weight. This link is C3's inference: [2609.23658] did not study the guided branch.
+- *Texture fixed in screen coordinates* → a subject held at one screen position while the background or camera drifts.
+- *Remove the reference, keep the hierarchy* → during the competition window, the coarse frame-shared part gets gain 1, i.e. the plain conditional prediction with no extrapolation. The coarse frame-varying part, which carries the per-frame placement evidence, keeps gain w, and the fine bands keep full CFG. After the window plain CFG returns, and anchoring then holds whichever trajectory won.
+- *StyleGAN3's averaged-image test* → the temporal average of the output video. A moving subject blurs into a trail; a stuck one stays sharp. This gives a cheap, direct sticking score.
+- *Amount and kind:* C3 changes which of the model's own early candidates wins, stationary or displaced. It cannot create a trajectory the model never proposes [2506.01144, 2607.26706].
+- *Why T2V differs from History Guidance and ALG:*
+  - Both keep coarse shared content under full guidance and withhold only its fine detail [2502.06764, 2506.08456]. There the shared content is a conditioning input that the network reads and can place anywhere. Coarse consistency with it is compatible with motion, and only copying fine detail is a shortcut.
+  - In T2V CFG, the frame-shared part is not read as a reference. It is added to the state at the same coordinates in every frame, so even its coarse band is a stationary component. This is the positional-reference case of [2106.12423], not the conditioning-input case.
+  - The fine-detail shortcut of History Guidance and ALG is not the T2V problem. Early guidance is coarse [2506.19713], and Wan2.1 T2V is more dynamic than I2V from the same first frames [2506.08456]. C3 therefore leaves the fine band alone.
+
+**Why it could work / feasibility**
+- *The reference exists by construction.* The temporal mean of the difference is identical in every frame. Early guidance energy is mostly low-band [2506.19713], and the difference is appearance-dominated [2506.01144]. At the usual w = 6 [2603.14073, 2610.14153], the extrapolated shared term is five times the gap between the conditional and unconditional predictions.
+- *The model has the amplifier, at the right time.* Anchoring settles the competition in steps 1–5, while winners still flip on small margins [2609.23658]. A sampler-side change to the evidence can therefore change the winner.
+- *Acting on that window alone changes trajectories.* Relaxing same-position preference only in steps 1–5 lifts VideoPhy SA/PC from 53.64/29.45 to 57.43/39.94 without training [2609.23658]. C3 acts on the same competition, from the input side.
+- *Removing a positional reference removes sticking* in a video generator [2212.07413]. Pressure against change encourages sticking [2106.12423].
+- *Exact, cheap and in-distribution.*
+  - CFG is linear in its two predictions, so the 2×2 split (coarse or fine × shared or frame-varying) recombines exactly, as FDG's bands do [2506.19713].
+  - It needs no extra NFEs, gradients, LLM calls or attention hooks, and runs on Wan2.1-1.3B on one 24 GB GPU.
+  - The training-free λ feeds the network positional encodings it never saw, which is why LoRA was needed [2609.23658]. C3 uses only model predictions at gains the model is normally sampled with (1 or w).
+- *Deciding comparison* (Wan2.1-1.3B, equal NFE). Arms: plain CFG; C3; FDG along time (whole coarse band at gain 1 in the same window); all guidance off in the window; training-free RoPE-λ; C3 + λ. Predictions:
+  - (i) C3 beats FDG along time on RAFT flow and dynamic degree. FDG along time should behave like Interval Guidance, which lowered FLOW (4.10 → 3.76) and CLIPScore on this model [2603.14073].
+  - (ii) C3's gain shrinks when it is stacked on λ, because both act on anchoring.
+  - (iii) In steps 1–5, C3 lowers the mutual consistency of same-position candidates [2609.23658] without touching RoPE, and it lowers the sharpness of the subject in the temporal average.
+  - (iv) Under C3, motion rises with w; under CFG it stays flat.
+  - If (i) fails, C3 is just FDG along time. If (ii) fails, its mechanism is not anchoring.
+- *Baselines, with corrected attribution:*
+  - TrajCFG raises dynamic degree from 65.28 to 70.83 [2610.14153].
+  - The full CFG-Zero* [2503.18886] reaches 68.90. That figure comes from its optimised scale at every step together with the zeroed first update, and no ablation separates the two [2610.14153]. It is therefore not evidence about early guidance alone.
+- *Per-backbone window:* CogVideoX's earliest estimates are dominated by watermarks [2603.14073], so the window is set per backbone from the measured competition steps.
+- *Key assumption:* the CFG-amplified frame-shared term is a large enough share of the same-position evidence in steps 1–5 to change which candidate anchoring picks.
+
+**Novelty vs. closest in-domain work** The closest work is FDG [2506.19713], followed by the RoPE-λ fix [2609.23658] and TrajCFG [2610.14153].
+- *FDG* lowers the gain of the whole low spatial band, in images, against saturation and loss of diversity. Carried to early video steps, it also withholds the coarse frame-varying part, which in C3's account is the per-frame placement evidence that should decide the competition. C3 splits the coarse band along time and withholds only the frame-identical part. Prediction (i) separates the two.
+- *RoPE-λ* weakens anchoring itself, globally, by editing the network's positional encoding: λ is tuned by hand, LoRA was needed for the main results, and a learned per-head λ failed. C3 leaves anchoring and the network untouched, so anchoring still holds identity and static background together. It removes only the screen-fixed evidence that the sampler feeds into anchoring, and the amount removed is set by each prompt's own guidance at each step rather than by one global scale. Prediction (ii) tests the link.
+- *TrajCFG* raises the whole difference's gain on revising foreground tokens (up to 10, against a base of 6), so the subject's screen-fixed shared part is extrapolated harder. It has no temporal split. C3 composes with it if TrajCFG's extra gain is confined to the frame-varying part.
+
+**Main risk** The CFG-amplified frame-identical term may be too weak, relative to the conditional prediction's own shared content and to anchoring itself, to flip which candidate wins. C3 would then match the FDG-along-time arm and pay its early alignment cost, as Interval Guidance did on Wan2.1-1.3B (CLIPScore 0.2535 → 0.2392 [2603.14073]).
