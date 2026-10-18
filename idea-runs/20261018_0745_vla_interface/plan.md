@@ -2,10 +2,13 @@
 
 **Goal**: ONE focused, sharp, well-grounded methodological intuition for this problem that a simulated CVPR 2027 panel rates at ≥ 5/10 acceptance odds, executable within the Constraints in problem.md.
 
-**Active direction**: (none yet)
-**Status**: `forming`
+**Active direction**: Axis `language sub-task grounding mismatch between controller and pretrained VLA`, Gap 1 — controller-side methods learn which phrasings a frozen VLA executes only from episode-level outcomes, never from the VLA's own immediate response to a candidate command.
+**Status**: `drilling`
 
 ## Candidate axes
+- A1 `language sub-task grounding mismatch between controller and pretrained VLA` — done: 2 gaps (executability learned only from episode outcome; executability treated as state-independent)
+- A2 `non-language intermediate representations (points, traces, goal images) for conditioning pretrained VLAs` — done: 2 gaps (cue-to-target binding only by co-occurrence; single open-loop steering strength)
 
 ## History
 - `forming` at turn 0: run created (round 2, embodied, user-suggested direction: cheap substitutes for frontier-model controllers); spawning gap_finders on two axes in parallel.
+- `drilling` at turn 1: chose A1/Gap 1 (read executability from the VLA's immediate response), cheapest to test and not tied to fine-tuning; A1/Gap 2 is its state-conditioned extension. Spawning innovator → C1.
