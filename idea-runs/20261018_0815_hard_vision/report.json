@@ -1,317 +1,467 @@
 {
-  "title": "Unwrapping the Dial: Frontier Semantics, Measured Ticks and Ranked Scale Labellings for Training-Free Instrument Reading with Black-Box VLMs",
+  "title": "Read the Labels, Measure the Ticks: A Frontier-Independent Labelling Margin for Training-Free Instrument Reading with a Black-Box VLM",
   "topic_relevance": {
     "sub_topic": [
       "Perceptual blind spots of frontier vision-language models",
-      "Analog instrument and clock reading (visual measurement reading)",
-      "Training-free tool augmentation of black-box VLMs"
+      "Analog instrument, scale and clock reading (visual measurement reading)",
+      "Training-free tool augmentation and selective prediction for black-box VLMs"
     ],
     "primary_focus": [
-      "Moving the fine-grained measurement out of the frontier model's lossy encoder-to-language readout and into locally measured geometry",
-      "Jointly ranked labelling hypotheses (numeral-to-tick, tick-count, hand-role) with a margin that serves as an abstention signal independent of the frontier model",
-      "A committed, pilot-gated accuracy and cost change on MeasureBench real dials and TickTockVQA under a modest API budget"
+      "Moving the fine-grained measurement out of the frontier model's encoder-to-language readout and into locally measured tick and pointer geometry",
+      "A jointly ranked set of scale labellings whose margin is a reliability signal that never passes through the frontier's own visual reading",
+      "Committed, pilot-gated accuracy and cost changes on MeasureBench real dials, two further public real-dial sets with frozen thresholds, MeasureBench linear scales and TickTockVQA, under a measured API budget"
     ]
   },
-  "one_sentence_thesis": "Let the frontier model read what a dial's numbers and hands mean, measure every angle from the photo's own ticks, and pick the scale labelling that best explains both.",
+  "one_sentence_thesis": "Let the frontier model read what an instrument's numbers mean, measure every tick and pointer locally, and trust the reading only when one scale labelling clearly wins.",
   "core_problem": {
-    "problem_statement": "Frontier VLMs read the unit and the rough scale of an analog dial correctly but get the value wrong: the best reported model is right on 31.5% of MeasureBench real dials while getting the unit right 96.2% of the time, and extra thinking tokens give very little improvement [2510.26865]. The needed signal, the exact angle of a few-pixel needle relative to a periodic tick ring, is lost in the model's visual readout, while trained geometric pipelines that do measure it break on unseen dial designs [2510.26865][2404.08785][2511.21982].",
+    "problem_statement": "Frontier VLMs read the unit and the rough scale of an analog instrument correctly but get the value wrong: the best reported model is right on 31.5% of MeasureBench real dials and 21.9% of real linear scales while reading the unit 96.2% of the time, and extra thinking barely helps [2510.26865]. The needed signal, the exact position of a thin pointer or meniscus relative to a periodic tick lattice, is lost in the model's visual readout, while trained readers that measure it break on unseen designs [2510.26865][2404.08785][2511.21982].",
     "why_it_matters": [
-      "Reading gauges, meters and clocks is a basic industrial-inspection and assistive task, and 2026 frontier models still fail it: on a uniform real dial they reach about 14% normalised MAE while reading an in-band digital display almost perfectly [2604.22829].",
-      "The failure is a readout failure, not a knowledge failure: models identify the instrument, unit and major spacing but miss by one or more ticks, frontier API models answer '10:10' on 11.9-29.7% of real clocks, and do not improve with reasoning [2510.26865]; Astra-style higher reasoning effort costs up to 13.22x and does not close fine-geometry gaps [2609.35718].",
-      "Every black-box remedy studied so far still ends with the frontier model reading pixels (prompts, hints, visual prompts) [2407.06581][2603.16250][2605.16410][2610.12942], and arbiters that decide whether to trust a tool use the same blind model as the reference [2610.04836][2512.06373].",
-      "Trained dial readers modify weights and stay near or below the frontier on real dials (TriSCA 28.5% vs 31.5%) [2604.26614], DialBench's reader 'struggles to predict well on meter images it has never seen before' [2511.21982], and synthetic-data training transfers weakly to real images [2510.26865][2603.08011]."
+      "Reading gauges, scales and clocks is a basic industrial-inspection and assistive task, and 2026 frontier models still fail it on real gauges while reading in-band digits almost perfectly [2604.22829]; on real industrial scenes the best of 24 MLLMs reaches 25.7% joint value-unit accuracy [2609.04014].",
+      "The failure is a readout failure, not a knowledge failure: models identify the instrument, unit and major spacing but miss ticks or whole intervals, answer '10:10' on 11.9-29.7% of real clocks, and do not improve with reasoning [2510.26865]; Astra-style higher reasoning effort costs up to 13.22x and does not close fine-geometry gaps [2609.35718].",
+      "Black-box remedies studied so far still end with the frontier model reading pixels (prompts, visual prompts, hints, demonstrations) [2407.06581][2603.16250][2605.16410][2610.12942], and tool-trust arbiters use the same blind model as the judge [2610.04836][2512.06373]; token confidence of a VLM gauge reader yields errors at confidence >= 0.99 [2608.17723].",
+      "A 2026 gauge study recommends exactly the split of VLM for semantics and deterministic geometry for the needle, but only as design guidance from three instruments on video [2604.22829]; no one has built it on broad real-image benchmarks, measured when it fails, or given it a reliability signal.",
+      "Trained readers modify weights and stay near or below the frontier on real dials (TriSCA 28.5% vs 31.5%) [2604.26614], DialBench's reader 'struggles to predict well on meter images it has never seen before' [2511.21982], and synthetic-data training transfers weakly to real images [2510.26865][2603.08011]."
     ],
-    "concrete_example": "A photo of an ammeter whose pointer sits on 20 A: GPT-5 answers 26 A with the correct unit [2510.26865]. The Reitsma modular reader, which anchors the scale on OCR'd numerals, detects only 18-35% of scale markers and so fails to produce a usable scale on 40-57.5% of images [2404.08785]. On a real wall clock showing 4:37 the frontier model answers '10:10', the output prior MeasureBench reports for 20.34% of GPT-5's real-clock answers [2510.26865], and a Hough line fit returns two unlabelled lines that may be read with hour and minute swapped [2603.08011]."
+    "concrete_example": "A photo of an ammeter whose pointer sits on 20 A: GPT-5 answers 26 A with the correct unit [2510.26865]. The Reitsma modular reader, which anchors the scale on OCR'd numerals, fails OCR on 40-57.5% of images [2404.08785] and scores 8.5% on MeasureBench real images [2510.26865]. On a real wall clock showing 4:37 a frontier model answers '10:10', the output GPT-5 gives on 20.34% of real clocks [2510.26865], and a Sobel+Hough clock reader returns unlabelled lines that score under 10% on in-the-wild clocks [2111.09162]. The proposed system reads the 20 A case as: frontier says box 'C' = 20 and unit A; local geometry puts the pointer 0.02 minor divisions past the major tick labelled by box 'C'; the next-best labelling (box 'C' attached one major over) scores far lower, so it answers 20 A."
   },
   "key_novelty": {
-    "main_idea": "Labelling-ranked dial unwrapping: frontier-read semantics as the coarse code, the photo's own tick lattice as the fine measurement, and a needle-only counterfactual sweep",
+    "main_idea": "A frontier-independent labelling margin over locally measured scale geometry",
     "explanation": [
-      "Like a structured-light scanner, the coarse signal (numeral values, the frontier's semantics) only picks which interval; the fine signal (measured tick and needle angles) supplies the value.",
-      "Instead of rounding level by level, all neighbouring scale labellings (numeral one tick over, a missed tick, swapped hands) are scored together; the winner's lead over the runner-up says when to abstain.",
-      "The needle is found by pasting candidate needle silhouettes onto the photo: at the true angle the paste changes almost nothing in frozen features, so shadows and counterweights are rejected."
+      "The frontier model only names things (numeral values in lettered boxes, unit, scale type, pointer roles); every position, tick count and pointer angle is measured locally from the photo.",
+      "All nearby ways of numbering the measured ticks (numeral one tick over, a missed tick, swapped hands, reversed direction) are scored together; the gap between the winner and the best answer-changing rival decides whether to answer.",
+      "The same labelling-and-margin machinery is run on circular dials, clocks and straight linear scales, and is tested with frozen thresholds on datasets it never saw."
     ]
   },
   "problem_definition": {
-    "formal_setting": "Given an image I of an analog instrument with K>=1 pointers and a question q, recover the reading y (value and unit). Model the dial after rectification as a pivot c, a set of tick angles T={t_1<...<t_N} with radial lengths l_i, numeral boxes B={(b_j, alpha_j)} with angular positions alpha_j, and pointer angles phi_1..phi_K. The reading is y = V_h(phi), where V_h maps an angle to a value under a labelling hypothesis h = (pi, c, d, rho): pi assigns numeral boxes to major-tick indices, c inserts or deletes at most one tick per major interval, d is the scale direction and rho assigns pointer roles (hour/minute/second, or decade order on multi-dial meters). The frontier model F, a black box, returns per-box values v_j, the unit u, the scale type s (linear, non-linear, multiple scales) and pointer semantics, but never angles. We seek h* = argmax_h S(h; T, B, v, phi) and the margin m = S(h*) - max{S(h): |V_h(phi) - V_h*(phi)| exceeds the answer tolerance}; output y if m >= tau, otherwise abstain and fall back to F's own reading. Correctness of the numeral-to-tick assignment by nearest major tick requires |alpha_j - theta_pi(j)| < Delta_major/2, the dial analogue of the half-period condition of multi-frequency phase unwrapping [1903.09836].",
-    "inputs": "One RGB image of an analog dial instrument (single-pointer gauge, multi-hand clock, or multi-dial electricity meter) and a natural-language reading question; API access to one frontier VLM (GPT-6 Astra) used once per image at default reasoning effort; frozen local models on one 24 GB GPU.",
-    "outputs": "The reading in the instrument's unit (or h:mm for clocks), a reliability margin m, a needle-peak sharpness score, an abstain flag, and the intermediate evidence (labelled tick lattice, numeral-to-tick assignment, needle angle) that can optionally be handed back to the frontier model."
+    "formal_setting": "Given an image I of an analog instrument and a question q, recover the reading y (value and unit). After rectification, a circular dial is parameterised by a pivot c and an angle coordinate, and a linear scale by a fitted scale axis and an arc-length coordinate; in both cases the scale is a 1D coordinate u. Locally measured evidence is: tick positions T = {t_1 < ... < t_N} with lengths l_i, numeral boxes B = {(b_j, u_j)} with positions u_j, and indicator positions phi_1..phi_K (pointers, liquid level, object endpoints). The frontier model F, a black box, returns per-box values v_j or 'not a scale numeral', the unit, the scale type s (linear, non-linear, multiple scales) and indicator semantics, but no positions. A labelling hypothesis h = (pi, delta, d, rho) assigns numeral boxes to major-tick indices (pi), inserts or deletes at most one minor tick per major interval (delta), fixes the scale direction (d) and assigns indicator roles (rho: hour/minute/second, decade order, or object start/end). V_h maps a coordinate to a value by local interpolation between flanking labelled ticks. We seek h* = argmax_h S(h; T, B, v, phi) and the margin m = S(h*) - max{S(h): |V_h(phi) - V_h*(phi)| > tol}, where tol is half the measured minor-tick value, computed without ground truth. Output y = V_h*(phi) if m >= tau_m and the pointer-fit quality q >= tau_q, otherwise abstain and fall back to F's own reading y_F.",
+    "inputs": "One RGB image of an analog instrument (single-pointer gauge, multi-hand clock, multi-dial meter, or single-scale linear instrument) and a natural-language reading question; one API call to GPT-6 Astra at default effort per image; frozen local models on one 24 GB GPU.",
+    "outputs": "The reading in the instrument's unit (or h:mm for clocks), the labelling margin m, the pointer-fit quality q, an abstain flag, and the intermediate evidence (labelled tick lattice, numeral-to-tick assignment, indicator position) that can optionally be handed back to the frontier model."
   },
   "key_terms": {
-    "coarse code": "Information that is imprecise but unambiguous about which interval the reading lies in: the values of the printed numerals, the unit, the scale type and which hand is which. Here it is read by the frontier model.",
-    "fine phase": "Precise but periodic measurements: the angles of every tick and of the needle, measured from the photo. A tick is easy to locate but by itself does not say which tick it is.",
-    "labelling hypothesis": "One complete guess of how the measured ticks are numbered: which major tick each numeral belongs to, whether a tick was missed or spurious, and which pointer has which role.",
-    "joint ranking": "Scoring all neighbouring labelling hypotheses together rather than fixing one level at a time, so that an early mistake (a numeral attached to the wrong tick) cannot silently propagate.",
-    "margin": "How much better the best labelling explains the evidence than the best rival that would change the answer; a small margin triggers abstention.",
-    "paste-and-compare needle sweep": "Rendering a needle silhouette at a candidate angle onto the photo and measuring how much frozen image features change; at the true needle position the paste is almost a no-op.",
-    "half-interval condition": "A numeral attaches to the right major tick if its measured position is off by less than half the spacing between major ticks; the dial version of the rule that makes phase unwrapping exact.",
-    "hybrid A": "Baseline: frontier semantics plus a Reitsma-style linear angle-to-value fit through numeral positions plus a Hough/line needle.",
-    "hybrid B": "Baseline: frontier semantics plus this paper's ranked tick lattice plus a Hough/line needle; it isolates the contribution of the needle sweep.",
-    "coverage": "The fraction of images on which the method answers instead of abstaining."
+    "labelling hypothesis": "One complete guess of how the measured ticks are numbered: which major tick each numeral belongs to, whether a minor tick was missed or spurious, the scale direction, and which pointer or endpoint has which role.",
+    "labelling margin": "How much better the best labelling explains the evidence than the best rival labelling that would change the answer by more than half a minor division; a small margin triggers abstention.",
+    "frontier-independent": "Computed only from local measurements and the frontier's symbolic answers (numeral values, unit), never from the frontier's own reading, confidence or self-agreement.",
+    "tip refinement": "A native-resolution, pixel-space fit of the pointer axis from cross-section centroids on concentric circles, seeded by a coarse pointer angle; its precision does not depend on any feature-map patch size.",
+    "paste-and-compare sweep": "Compositing a needle silhouette onto the photo at candidate angles and scoring how little the image changes; used only to pick the coarse pointer angle, tip versus tail, and needle versus shadow.",
+    "better-views baseline": "GPT-6 Astra given the same rectified crop, unwrapped strip and lettered tick and numeral marks that the method computes, but not the computed answer.",
+    "Astra-best": "The single Astra configuration (effort level, tools, views) with the highest pilot accuracy, chosen on the pilot and then fixed for every test set, so the baseline is not a max over noisy test runs.",
+    "gain decomposition": "Gain over a baseline B = coverage x (method accuracy on answered items - B's accuracy on the same items) + (1 - coverage) x (fallback accuracy - B's accuracy on abstained items).",
+    "coverage": "The fraction of images on which the method answers instead of abstaining.",
+    "frozen thresholds": "All score weights and thresholds set once on 200 MeasureBench pilot dials, committed with the code hash and image lists on 2026-10-28, and applied unchanged to every other set."
   },
   "related_work": [
     {
       "sub_area": "Frontier VLM evaluation on measurement reading and hard vision",
-      "what_it_does": "MeasureBench scores 18 VLMs on 1,272 real instrument images by per-image value intervals; the best model reaches 31.5% on 711 real dials with 96.2% unit accuracy, thinking barely helps, clocks and multi-needle dials are hardest, and errors include one-minor-tick misses, whole-interval misses (26 A for 20 A) and a '10:10' output prior [2510.26865]. The dynamic-gauge study finds 2026 frontier models fail real gauges but read digits near-perfectly and recommends VLMs for semantics plus deterministic geometry for the needle [2604.22829]. The GPT-6 Astra evaluation shows higher reasoning effort and built-in tools close some gaps at 1.04-13.22x cost, but metric, fine-boundary and small-structure gaps remain [2609.35718].",
-      "open_gap": "These are diagnoses. None builds the recommended semantics-plus-geometry division of labour as a training-free method on a broad real-image benchmark, and Astra itself has not been measured on dials.",
-      "citations": ["2510.26865", "2604.22829", "2609.35718"]
+      "what_it_does": "MeasureBench scores 18 VLMs on 1,272 real instrument images (711 dial, 361 linear, 96 digital, 104 composite) by per-image value intervals; the best model reaches 31.5% on real dials and 21.9% on real linear scales with 96.2% unit accuracy, thinking barely helps, clocks and multi-needle dials are hardest, and real clocks trigger a '10:10' prior [2510.26865]. 'Lost in Motion' evaluates 2026 frontier models on videos of three instruments, finds they fail gauges but read digits near-perfectly, and recommends hybrid architectures with VLMs for 'higher-level semantic tasks' and deterministic edge/Hough pipelines for the needle, plus rule-based validation [2604.22829]. InSituMeasure scores 24 MLLMs on 2,922 real industrial tasks with answerability labels, best 25.7% [2609.04014]. The GPT-6 Astra evaluation shows higher effort and built-in tools close some gaps at 1.04-13.22x cost while metric and fine-structure gaps remain [2609.35718].",
+      "open_gap": "These are diagnoses or design guidance. The semantics/geometry split is credited to [2604.22829]; what none provides is a built, single-image system evaluated on broad real-image benchmarks, a reliability signal for when the split fails, or a test of whether the gain comes from measurement or from a better view. Astra has not been measured on dials.",
+      "citations": [
+        "2510.26865",
+        "2604.22829",
+        "2609.04014",
+        "2609.35718"
+      ]
     },
     {
       "sub_area": "Trained dial and clock readers",
-      "what_it_does": "TriSCA aligns a 4B VLM's visual tower on 400K synthetic triplets, then applies SFT and real-image GRPO, lifting Qwen3-VL-4B from 12.0% to 28.5% on MeasureBench real dials [2604.26614]. DialBench's MRLM injects CLIP template features of meter archetypes via cross-attention and MoE, trained end to end on RPM-10K [2511.21982]. Swap-DPO fine-tunes VLMs on TickTockVQA with hour/minute-swapped negatives built from the angle coupling theta_h = 30h + m/2 [2603.08011]. A synthetic-only CNN classifies start, end and needle angles with 2-5 degree error on real gauges [2308.14583].",
-      "open_gap": "All modify weights, so none can help an API-only frontier model; they generalise poorly to unseen designs [2511.21982] and stay near the frontier's own accuracy on real dials [2604.26614]. The clock-hand coupling is used only to build training negatives, never as an inference-time consistency check [2603.08011].",
-      "citations": ["2604.26614", "2511.21982", "2603.08011", "2308.14583"]
+      "what_it_does": "TriSCA aligns a 4B VLM's visual tower on 400K synthetic triplets, then applies SFT and real-image GRPO, reaching 28.5% on MeasureBench real dials [2604.26614]. DialBench's MRLM injects CLIP template features via cross-attention and MoE, trained end to end on RPM-10K [2511.21982]. A QLoRA-specialised Qwen2.5-VL-7B gauge reader transfers poorly across datasets and its token confidence still gives confident errors [2608.17723]. It's About Time detects the clock, warps it with a learned homography and classifies 720 joint (hour, minute) states, trained on synthetic clocks and pseudo-labelled video, reaching about 80% (minute within +-1) on COCO/OpenImages clocks [2111.09162] but 18.54% full-time on TickTockVQA [2603.08011]. Swap-DPO fine-tunes VLMs with hour/minute-swapped negatives built from theta_h = 30h + m/2 [2603.08011]. A synthetic-only CNN regresses gauge angles with 2-5 degree error on real gauges [2308.14583].",
+      "open_gap": "All modify weights, so none helps an API-only frontier model, and their generalisation to unseen designs is weak [2511.21982][2608.17723][2603.08011]. The 720-state joint clock space is learned in [2111.09162]; the hand coupling is used only for training negatives in [2603.08011], never as an inference-time constraint inside a scored hypothesis space.",
+      "citations": [
+        "2604.26614",
+        "2511.21982",
+        "2608.17723",
+        "2111.09162",
+        "2603.08011",
+        "2308.14583"
+      ]
     },
     {
       "sub_area": "Modular geometric gauge pipelines",
-      "what_it_does": "Reitsma et al. detect the gauge, find major notches with a trained DINOv2 keypoint head, fit an ellipse, OCR numerals with DBNet+ABINet, fit a RANSAC linear angle-to-value map through numeral angles and intersect a segmented needle line; error is 0.77-1.15% of range when OCR reads two or more numerals, but OCR fails on 40-57.5% of images [2404.08785]. MeterFL segments ticks and pointer with a trained 30.6M U-Net, unwraps them into a polar strip and counts ticks from the scale start with v_min and delta_v supplied, reaching 87.2% within two minor divisions [2609.31998].",
-      "open_gap": "Reitsma interpolates linearly between numerals and ignores minor ticks, assumes linear scales and breaks at OCR and needle segmentation (shadows, white-on-white); MeterFL needs metadata it does not read and counts from the start, so one missed tick shifts every later index. Neither ranks alternative labellings or abstains on a calibrated margin, and both were built around trained components that overfit (8.5% on MeasureBench real images for Reitsma) [2510.26865].",
-      "citations": ["2404.08785", "2609.31998"]
+      "what_it_does": "Reitsma et al. detect the gauge, find major notches with a trained keypoint head, fit an ellipse, OCR numerals, fit a RANSAC linear angle-to-value map through numeral angles and intersect a segmented needle line; error is 0.77-1.15% of range when OCR reads two or more numerals, but OCR fails on 40-57.5% of images [2404.08785]. MeterFL segments ticks and pointer with a trained 30.6M U-Net, unwraps them into a polar strip and decodes p = i + (theta_ptr - theta_i)/(theta_{i+1} - theta_i) counted from the scale start, with v_min and delta_v supplied, reaching 87.2% within two minor divisions on its public 269-image reading test set, where a zero-shot frontier VLM reaches 49.1% [2609.31998]. A Sobel+Hough clock reader scores 7.7-9.7% on in-the-wild clocks [2111.09162].",
+      "open_gap": "Reitsma interpolates linearly between numerals, assumes linear scales and breaks at OCR and needle segmentation; MeterFL needs metadata it does not read and counts from the start, so one missed tick shifts every later index. Neither ranks alternative labellings or abstains, and training-free edge geometry has collapsed in the wild, which is the risk this paper must pass with a day-1-3 pilot.",
+      "citations": [
+        "2404.08785",
+        "2609.31998",
+        "2111.09162"
+      ]
     },
     {
-      "sub_area": "Render-and-compare with frozen foundation features",
-      "what_it_does": "FoundPose estimates unseen-object pose without training by matching frozen DINOv2 ViT-L layer-18 patch descriptors between a real crop and renders of an exact textured 3D model, with bag-of-words template retrieval and featuremetric refinement; intermediate-layer patches carry positional information that the cls token lacks [2311.18809].",
-      "open_gap": "It assumes an exact 3D model and a good mask; it has not been used for a 2D low-parameter shape such as a needle, where the model space is small enough to enumerate.",
-      "citations": ["2311.18809"]
+      "sub_area": "Render-and-compare and promptable segmentation as training-free pointer localisers",
+      "what_it_does": "FoundPose estimates unseen-object pose without training by matching frozen DINOv2 ViT-L layer-18 patch descriptors between a real crop and renders of an exact 3D model; because 14 px patches limit precision it adds featuremetric refinement [2311.18809]. SAM 2 segments any object from a single click on an image, predicting several masks for ambiguous clicks, at 58.9-61.9 1-click mIoU on 23 zero-shot datasets [2408.00714].",
+      "open_gap": "Neither has been used to localise a 2-4 px instrument pointer. At patch scale a thin needle is sub-patch, so precision must come from a separately defined pixel-space refinement; the paper therefore compares the frozen-feature sweep against a hub-prompted SAM 2 mask, a radial profile and a pixel-space sweep, all with the same refinement.",
+      "citations": [
+        "2311.18809",
+        "2408.00714"
+      ]
     },
     {
-      "sub_area": "Multi-frequency phase unwrapping (source domain)",
-      "what_it_does": "Temporal phase unwrapping recovers the integer fringe order by rounding the scaled coarse-minus-fine phase, correct only while the combined error stays below half a period, which forces hierarchical unwrapping when the frequency ratio is large [1903.09836]. Kinect-style multi-frequency ToF replaces sequential CRT unwrapping, which propagates early errors, with joint enumeration and ranking of all plausible unwrapping vectors, and reuses the winner's density as a single outlier-rejection confidence (about 52% more valid measurements) [1608.05209].",
-      "open_gap": "Never applied to reading instruments. On a dial the whole lattice is visible, so the transferable part is not period counting but the joint enumeration of neighbouring labellings and the margin used as an abstention signal.",
-      "citations": ["1903.09836", "1608.05209"]
-    },
-    {
-      "sub_area": "Black-box remedies for VLM perceptual blind spots and tool-trust arbitration",
-      "what_it_does": "Prompting, CoT and slow thinking do not fix low-level perception even though frozen-encoder probes recover it [2407.06581]; task-wise visual prompts still leave the black-box VLM reading the edited pixels [2603.16250]; learned hints [2605.16410] and visual demonstrations [2610.12942] steer but do not add perception. Tool-trust arbiters use the same backbone VLM to verify specialist outputs [2610.04836] or a trained rethink turn bounded by the model's own grounding [2512.06373].",
-      "open_gap": "No black-box method hands the frontier model an answer-bearing measurement with a reliability signal that does not pass through the frontier's own visual readout.",
-      "citations": ["2407.06581", "2603.16250", "2605.16410", "2610.12942", "2610.04836", "2512.06373"]
+      "sub_area": "Black-box remedies for VLM perceptual blind spots, visual prompting and tool-trust arbitration",
+      "what_it_does": "Prompting, CoT and slow thinking do not fix low-level perception although frozen-encoder probes recover it [2407.06581]; Set-of-Mark overlays alphanumeric marks on segmented regions so GPT-4V can refer to them, and warns that numeric marks confuse the model on number-rich images [2310.11441]; task-wise visual prompts [2603.16250], learned hints [2605.16410] and visual demonstrations [2610.12942] steer the black-box model but leave it reading pixels. Tool-trust arbiters use the same backbone VLM to verify specialist outputs [2610.04836] or a trained rethink turn bounded by the model's own grounding [2512.06373].",
+      "open_gap": "No black-box method hands the frontier an answer-bearing measurement with a reliability signal that does not pass through the frontier's own visual readout, and none tests whether giving the frontier the same measured views as a visual prompt would close the gap by itself.",
+      "citations": [
+        "2407.06581",
+        "2310.11441",
+        "2603.16250",
+        "2605.16410",
+        "2610.12942",
+        "2610.04836",
+        "2512.06373"
+      ]
     },
     {
       "sub_area": "Off-the-shelf perception components",
-      "what_it_does": "DBNet is a real-time segmentation-based detector for multi-oriented and curved scene text, ResNet-18 variant at 48-62 FPS, trained on generic scene text [1911.08947]. Grounding DINO detects arbitrary text-named categories zero-shot (52.5 AP on COCO without COCO data; 172M parameters for the Swin-T variant) but can hallucinate false positives [2303.05499].",
-      "open_gap": "Used here as frozen, benchmark-agnostic components: DBNet localises numerals (the frontier only reads their values), Grounding DINO crops dials; neither is trained on any dial data.",
-      "citations": ["1911.08947", "2303.05499"]
+      "what_it_does": "DBNet is a segmentation-based detector for multi-oriented and curved scene text, ResNet-18 variant at 48-62 FPS, trained on generic scene text [1911.08947]. Grounding DINO detects text-named categories zero-shot (52.5 AP on COCO without COCO data) but can hallucinate false positives [2303.05499].",
+      "open_gap": "Used here as frozen, benchmark-agnostic components: DBNet localises numerals (the frontier only reads their values), Grounding DINO crops instruments and, on linear scales, the measured object named by the frontier; neither is trained on instrument data.",
+      "citations": [
+        "1911.08947",
+        "2303.05499"
+      ]
     }
   ],
   "method": {
     "high_level_flow": [
-      "Localise: Grounding DINO dial crop -> ellipse rectification and pivot estimate -> DBNet numeral boxes",
-      "Ask once: numbered-box overlay -> single frontier call (box values, unit, scale type, minors per major, pointer semantics, own reading)",
-      "Measure: polar unwrap of the rectified annulus -> tick lattice with major/minor split",
-      "Label: enumerate neighbouring labelling hypotheses -> joint scoring -> winner + margin",
-      "Locate pointer(s): full-range paste-and-compare silhouette sweep on frozen DINOv2 patches -> native-resolution refinement between flanking ticks -> clock-hand / decade coupling check",
-      "Answer: value from local interval interpolation -> abstain or answer -> optional evidence hand-back to the frontier"
+      "Localise: Grounding DINO instrument crop -> ellipse rectification and pivot (dials) or RANSAC scale-axis fit (linear) -> DBNet numeral boxes",
+      "Ask once: lettered-box overlay -> single frontier call (box values, unit, scale type, indicator semantics, own reading y_F; minors-per-major only as a soft prior)",
+      "Measure: unwrap to a 1D scale strip (polar for dials, axis-aligned for linear) -> tick lattice with local major/minor split and locally counted minors per major",
+      "Label: enumerate neighbouring labelling hypotheses -> joint scoring -> winner h* and margin m",
+      "Locate indicator: coarse candidate (paste-and-compare sweep on dials and clocks; profile change-point or SAM 2 object mask on linear scales) -> native-resolution tip refinement -> clock-hand or decade coupling check",
+      "Answer: local interpolation between flanking labelled ticks -> answer or abstain (fallback to y_F) -> optional evidence hand-back"
     ],
     "modules": [
       {
-        "module": "Dial localisation and rectification",
-        "role": "Crop each dial face and map it to a fronto-parallel circle with a known pivot.",
-        "model": "Grounding DINO-T (Swin-T, 172M) frozen, prompt 'gauge dial . clock face . meter dial' [2303.05499]; classical ellipse fit (RANSAC on radial edge points)",
-        "inputs": ["RGB image"],
-        "outputs": ["one rectified crop per dial", "pivot estimate c", "rim radius"],
-        "notes": "MeasureBench images are mostly tight instrument photos, so the detector is used only when the dial covers less than about half of the image or when several dials are present (electricity meters). The ellipse is fitted to the outer ring of high-gradient radial structures; the pivot is refined as the point that minimises the spread of line-segment directions through the hub region. Grounding DINO's stated false positives [2303.05499] are filtered by requiring a fitted ellipse with tick-like periodic structure."
+        "module": "Instrument localisation and rectification",
+        "role": "Crop each instrument and map dials to a fronto-parallel circle with a pivot, or linear scales to a straight axis.",
+        "model": "Grounding DINO-T (Swin-T) frozen, prompt 'gauge dial . clock face . meter dial . ruler . measuring cylinder . thermometer' [2303.05499]; RANSAC ellipse fit on radial edge points (dials); RANSAC line fit on short parallel edge segments (linear scales)",
+        "inputs": [
+          "RGB image"
+        ],
+        "outputs": [
+          "one rectified crop per instrument at the source's native resolution (no downsampling)",
+          "pivot c and rim radius R (dials) or scale axis and tick side (linear)"
+        ],
+        "notes": "The detector is used only when the instrument covers less than about half the image or several instruments are present. Grounding DINO's false positives [2303.05499] are filtered by requiring periodic tick-like structure along the fitted ellipse or axis. The pivot is refined as the point minimising the spread of line-segment directions through the hub region."
       },
       {
         "module": "Numeral localisation",
         "role": "Find where the scale numerals are, without reading them.",
         "model": "DBNet ResNet-18, off-the-shelf scene-text weights, frozen [1911.08947]",
-        "inputs": ["rectified dial crop"],
-        "outputs": ["numeral boxes b_j with angle alpha_j and radius r_j about the pivot"],
-        "notes": "Follows the reviewer's carry-forward: positions come from a local detector, never from the frontier model, whose named limit is fine-grained spatial grounding [2510.26865]. Boxes far from the dominant numeral radius are kept but flagged (serial numbers, brand text) so the frontier can label them 'not a scale numeral'. Reitsma's pipeline found only 18-35% of markers with detection plus recognition combined [2404.08785]; the pilot reports detection recall alone."
+        "inputs": [
+          "rectified crop"
+        ],
+        "outputs": [
+          "numeral boxes b_j with scale coordinate u_j (angle about the pivot, or position along the axis)"
+        ],
+        "notes": "Positions come from the local detector, never from the frontier. Boxes off the dominant numeral radius or axis offset are kept but flagged so that the frontier can label them 'not a scale numeral'. Detection recall is a reported component metric on the 150 annotated held-out dials."
       },
       {
-        "module": "Frontier coarse-code call",
-        "role": "Read the semantics the frontier is good at: numeral values, unit, scale type, minor divisions per major, pointer roles and rotation directions.",
-        "model": "GPT-6 Astra through its API, default reasoning effort, one call per image",
-        "inputs": ["original image", "rectified crop with numbered box outlines drawn on it", "structured prompt with a JSON answer schema"],
-        "outputs": ["value v_j or 'not a scale numeral' per box id", "unit u", "scale type s", "minor divisions per major interval", "pointer count and roles", "decade order and rotation direction for multi-dial meters", "the frontier's own reading y_F (used only as fallback and diagnostic)"],
-        "notes": "Unit reading is the frontier's strongest sub-skill (96.2%) [2510.26865] and digit reading is near-perfect [2604.22829]. The frontier's reading y_F is NOT used to centre any search window and does NOT enter the margin: it can be a whole major interval off or stuck at 10:10 [2510.26865][2604.26614]. Per-call cost and latency are logged for every call."
+        "module": "Frontier semantic call",
+        "role": "Read what the frontier is good at: numeral values, unit, scale type, indicator roles, rotation directions on multi-dial meters, and its own reading as fallback.",
+        "model": "GPT-6 Astra through its API, default reasoning effort, exactly one call per image",
+        "inputs": [
+          "original image",
+          "rectified crop with each DBNet box outlined and marked with a letter (A, B, C, ...), not a number",
+          "structured prompt with a JSON answer schema"
+        ],
+        "outputs": [
+          "value v_j or 'not a scale numeral' per box letter",
+          "unit u and scale type s",
+          "indicator count and roles (hour/minute/second, decade order, or object to be measured on rulers)",
+          "M_F, the frontier's stated minors per major (soft prior only)",
+          "the frontier's own reading y_F (fallback and diagnostic only)"
+        ],
+        "notes": "Box marks are letters because numeric marks confuse the model on number-rich images [2310.11441]; marks are placed beside, not on, each box. Unit and digit reading are the frontier's strong sub-skills [2510.26865][2604.22829]. y_F never centres a search window and never enters the margin. Input tokens, output tokens, cost and latency are logged per call and compared with a plain single-image Astra call."
       },
       {
-        "module": "Tick-lattice extraction",
-        "role": "Measure every tick angle and length from the photo.",
-        "model": "Training-free: polar unwrap of the annulus between 0.6 and 1.0 rim radius into a 1440 x 128 strip, per-column contrast against a median face profile, 1D peak detection, 2-means clustering of radial extent into major/minor; optional variant: 30.6M U-Net trained on MeterFL masks [2609.31998]",
-        "inputs": ["rectified crop", "pivot", "frontier-stated minors per major"],
-        "outputs": ["tick angles t_i", "lengths l_i", "major/minor flags", "per-tick detection confidence"],
-        "notes": "Polar unwrapping follows MeterFL [2609.31998] but at twice its angular resolution and without its trained segmenter in the main path. When the optional segmenter is used the claim becomes 'nothing is trained on the benchmark' rather than 'nothing is trained'. Minor ticks are counted locally between two measured majors, so a missed tick corrupts one interval instead of shifting every later index as in MeterFL's count-from-start decoder."
+        "module": "Tick-lattice extraction with local minor counting",
+        "role": "Measure every tick position and length, and count minors per major from the photo itself.",
+        "model": "Training-free: unwrap the tick band (0.6-1.0 R for dials; a band either side of the scale axis for linear scales) into a strip with 0.125 degree or 1 px columns, per-column contrast against a median face profile, 1D peak detection, 2-means clustering of tick length into major/minor. Pre-committed fallback: 30.6M U-Net tick segmenter trained on MeterFL train masks deduplicated against MeasureBench [2609.31998].",
+        "inputs": [
+          "rectified crop",
+          "pivot or scale axis"
+        ],
+        "outputs": [
+          "tick positions t_i, lengths l_i, major/minor flags, per-tick confidence",
+          "local minors-per-major count n_k for every major interval k and its mode M_L"
+        ],
+        "notes": "Polar unwrapping follows MeterFL [2609.31998] without its trained segmenter in the main path. Minors are counted between each pair of measured majors, so a missed tick corrupts one interval, unlike MeterFL's count-from-start decoder. The frontier's M_F enters S(h) only through a weak prior term; when M_F and M_L disagree, the margin shrinks instead of M_F overriding the count. If the training-free extractor fails G0 on days 1-3, the MeterFL-trained segmenter becomes the extractor; the claim then becomes 'nothing is trained on any test benchmark', and MeterFL is dropped as a cross-dataset test because it would be in-distribution for the segmenter."
       },
       {
-        "module": "Joint labelling-hypothesis ranking",
-        "role": "Choose the scale labelling that best explains numerals, lattice and pointer together, and measure how decisive that choice is.",
-        "model": "Exhaustive enumeration over a small discrete space plus a hand-specified log-score; no learned parameters",
-        "inputs": ["tick lattice", "numeral boxes with frontier values", "scale type", "pointer angle candidates"],
-        "outputs": ["winning labelling h*", "value-per-tick-index map V_h*", "margin m"],
-        "notes": "Hypotheses: for each numeral the nearest major tick and its two neighbours; per major interval an insertion or deletion of at most one minor tick; both scale directions; all pointer-role permutations. Joint enumeration follows the ToF unwrapping argument that sequential rounding propagates early errors while joint ranking checks the true maximum [1608.05209]. The margin is computed only against rivals that change the answer beyond the tolerance, so harmless ambiguities do not cause abstention. Non-linear scales attach values to tick indices and interpolate piecewise, so no global angle model is needed (Reitsma excluded non-linear dials [2404.08785])."
+        "module": "Joint labelling-hypothesis ranking and margin",
+        "role": "Choose the scale labelling that best explains numerals, lattice and indicator together, and measure how decisive that choice is.",
+        "model": "Exhaustive enumeration over a small discrete space plus a hand-specified log-score with five weights; no learned parameters",
+        "inputs": [
+          "tick lattice and local minor counts",
+          "numeral boxes with frontier values",
+          "scale type",
+          "indicator candidates"
+        ],
+        "outputs": [
+          "winning labelling h*",
+          "value map V_h*",
+          "margin m"
+        ],
+        "notes": "Hypotheses: for each numeral the nearest major tick and its two neighbours; per major interval an insertion or deletion of at most one minor tick; both directions; all indicator-role permutations; typically a few hundred hypotheses. The margin is computed only against rivals that change the answer by more than half a minor division, so harmless ambiguities do not cause abstention. Non-linear scales attach values to tick indices and interpolate piecewise (Reitsma excluded them [2404.08785]). The identical scorer and thresholds run on dials, clocks and linear scales; only the unwrap differs."
       },
       {
-        "module": "Paste-and-compare needle sweep",
-        "role": "Locate each pointer angle robustly to shadows, glare gaps, counterweights and tapered or hollow hands.",
-        "model": "DINOv2 ViT-L/14 frozen, layer-18 patch descriptors as in FoundPose [2311.18809]; 2D silhouette renderer with 12 shape variants",
-        "inputs": ["rectified crop", "pivot", "pointer colour sampled near the hub", "angular range: full scale arc on gauges, full circle on clocks and meter sub-dials"],
-        "outputs": ["needle angle phi_k per pointer", "peak sharpness"],
-        "notes": "For each candidate angle and variant, the silhouette (taper, tail or counterweight length, hub radius, width) is composited onto the photo; the score is the mean cosine similarity of layer-18 descriptors between photo and composite on the patches the silhouette touches. At the true pose the paste is nearly a no-op. Coarse pass at 2 degrees with 3 generic variants, then top-3 peaks refined at 0.25 degrees with all 12 variants, then sub-pixel tip refinement against the two flanking measured ticks at native resolution. The window is never centred on the frontier reading (reviewer carry-forward). For clocks the sweep is over the 720 joint (hour, minute) states, which fixes both hand angles by theta_h = 30h + m/2 [2603.08011]; an independent per-hand sweep is also run, and disagreement between the two lowers the margin."
+        "module": "Coarse pointer candidate: paste-and-compare silhouette sweep (dials and clocks)",
+        "role": "Pick the coarse pointer angle to within a few degrees, decide tip versus tail, reject shadows and counterweights, and separate hands.",
+        "model": "DINOv2 ViT-L/14 frozen, layer-18 patch descriptors as in FoundPose [2311.18809]; 2D silhouette renderer with 12 shape variants. Ablated against a pixel-space version of the same sweep (Lab colour plus gradient-orientation correlation).",
+        "inputs": [
+          "rectified crop at 448 px for the feature pass",
+          "pivot",
+          "needle colour sampled near the hub",
+          "angular range: full scale arc on gauges, full circle on clocks and meter sub-dials"
+        ],
+        "outputs": [
+          "coarse angle phi_0 per pointer (top-3 peaks kept)",
+          "peak sharpness"
+        ],
+        "notes": "For each candidate angle and variant the silhouette is composited onto the photo; the score is the mean cosine similarity of layer-18 descriptors between photo and composite on the patches the silhouette touches. Coarse pass at 2 degrees with 3 variants, then the top-3 peaks at 0.5 degrees with 12 variants. Because a 2-4 px needle is sub-patch at 14 px patches, the sweep is not asked for precision: its job ends at phi_0 +- 3 degrees with the tip side chosen. For clocks the sweep runs over the 720 joint (hour, minute) states, which fixes both hand angles by theta_h = 30h + m/2 [2603.08011]; an independent per-hand sweep is also run, and disagreement lowers the margin."
+      },
+      {
+        "module": "Native-resolution tip refinement (all pointer types)",
+        "role": "Turn a coarse pointer candidate into a precise axis angle at the tick ring, independent of feature-map resolution.",
+        "model": "Deterministic pixel-space fit; no learned parameters",
+        "inputs": [
+          "rectified crop at native resolution",
+          "pivot c",
+          "coarse angle phi_0 and tip side",
+          "needle colour c_n"
+        ],
+        "outputs": [
+          "refined angle phi at the tick-ring radius",
+          "axis-fit quality q (weighted residual RMS in px)"
+        ],
+        "notes": "(1) Needle-likelihood map L(x) = 0.5 * exp(-||Lab(x) - c_n||^2 / (2 kappa^2)) + 0.5 * g_perp(x), where c_n is the median Lab colour of photo pixels under the winning silhouette at radii 0.3-0.6 R and g_perp is the normalised gradient magnitude perpendicular to the candidate ray. (2) On K = 24 circles with radii evenly spaced in [0.35 R, 0.9 R] on the tip side, sample L at 0.05 degree steps over phi_0 +- 3 degrees with bilinear interpolation; the cross-section centre phi_k is the profile maximum refined by a 3-point parabolic fit, weighted by its contrast w_k. (3) Fit a line through the points c + r_k (cos phi_k, sin phi_k) by weighted total least squares with Huber IRLS, constraining it to pass within 2 px of the pivot; circles whose residual exceeds 3 px are dropped. (4) Intersect the axis with the median radius of the measured ticks to get phi, and read it against the flanking ticks measured in the same native-resolution strip. q is the weighted residual RMS. The same refinement is applied after every coarse localiser (sweep, SAM 2 mask, radial profile, pixel sweep), so the ablation 'coarse only vs coarse + refinement' and the comparison between seeds are both clean. On linear scales the analogue is a sub-pixel change-point fit of the indicator profile along the axis."
+      },
+      {
+        "module": "Indicator localisation on linear scales",
+        "role": "Locate the reading position on straight scales: liquid level or column top, or the two endpoints of a measured object on rulers.",
+        "model": "Training-free: 1D intensity and gradient profile along the scale axis with change-point detection for liquid columns and menisci; for rulers, Grounding DINO box of the object named by the frontier [2303.05499] prompted into SAM 2 [2408.00714], and the mask's extremes projected onto the scale axis",
+        "inputs": [
+          "axis-rectified crop",
+          "frontier indicator semantics"
+        ],
+        "outputs": [
+          "indicator coordinate(s) on the scale axis",
+          "profile or mask quality"
+        ],
+        "notes": "What transfers from dials: lettered-box frontier call, lattice extraction, local minor counting, the identical labelling scorer, margin and frozen thresholds. What does not transfer: the needle silhouette sweep and pointer coupling. Vernier calipers (a main plus a vernier scale) and composite instruments are outside scope; they are detected by the frontier's scale-type answer and routed to fallback, and their share of the linear subset is reported."
       },
       {
         "module": "Reading, abstention and optional hand-back",
-        "role": "Turn the labelled lattice and the pointer angle into a value, decide whether to answer, and optionally return evidence to the frontier.",
-        "model": "Deterministic; optional second frontier call",
-        "inputs": ["h*", "phi", "m", "sharpness", "unit", "y_F"],
-        "outputs": ["reading y with unit", "abstain flag", "evidence JSON"],
-        "notes": "y = V_h*(t_i) + (phi - t_i)/(t_{i+1} - t_i) * (V_h*(t_{i+1}) - V_h*(t_i)) for the flanking ticks t_i, t_{i+1}, the local form of MeterFL's interpolation [2609.31998]. Multi-dial meters use decade coupling: a higher-decade pointer's fraction within its digit must agree with the lower-decade reading, a direct use of the coarse-phase constraint [1903.09836]. Abstain if m < tau_m or sharpness < tau_s, thresholds fixed on the pilot split only; on abstention the system returns y_F flagged as unverified, so accuracy at 100% coverage is always reported."
+        "role": "Turn the labelled lattice and indicator position into a value, decide whether to answer, and optionally return evidence to the frontier.",
+        "model": "Deterministic; optional second frontier call (ablation only)",
+        "inputs": [
+          "h*",
+          "phi",
+          "m",
+          "q",
+          "unit",
+          "y_F"
+        ],
+        "outputs": [
+          "reading y with unit",
+          "abstain flag",
+          "evidence JSON"
+        ],
+        "notes": "y = V_h*(t_i) + (phi - t_i)/(t_{i+1} - t_i) * (V_h*(t_{i+1}) - V_h*(t_i)) for the flanking ticks, the local form of MeterFL's interpolation [2609.31998]; on rulers the reading is the difference of two endpoint values. Multi-dial meters use decade coupling: a higher-decade pointer's fraction within its digit must agree with the lower-decade reading. Abstain if m < tau_m or q > tau_q, thresholds fixed on the 200 MeasureBench pilot dials only; on abstention the system returns y_F flagged as unverified, so accuracy at 100% coverage is always reported."
       }
     ],
     "novel_architectural_elements": [
-      "The frontier model is placed only on the semantic branch (values of locally detected boxes, unit, scale type, pointer roles) and never on a geometric quantity; every angle comes from local measurement.",
-      "Numeral values, tick lattice and pointer angles meet in one joint hypothesis space instead of a pipeline of hard decisions, and its margin is the system's sole reliability output.",
-      "The needle search is a full-range sweep of counterfactual composites scored in a frozen encoder's patch space, coupled to the labelling ranking through the hand-role and decade constraints."
+      "The frontier model sits only on the symbolic branch (values of locally detected, letter-marked boxes, unit, scale type, indicator roles); every position, tick count and angle is measured locally, and the frontier's minors-per-major answer is a soft prior that can only shrink the margin.",
+      "Numeral values, the measured tick lattice and indicator positions meet in one jointly scored hypothesis space, and the margin to the best answer-changing rival is the system's only reliability output; it never uses the frontier's reading, confidence or self-agreement.",
+      "Pointer localisation is split into a coarse, robustness-oriented candidate stage (frozen-feature silhouette sweep, swappable with SAM 2, radial or pixel-space seeds) and a precision stage that is a fixed pixel-space axis fit, so the paper can attribute accuracy to each.",
+      "One scorer and one set of frozen thresholds serve circular dials, clocks and linear scales; only the unwrap and the indicator localiser change."
     ],
-    "pseudocode": "def read_dial(I, q, F):\n    dials = detect_and_rectify(I)                 # Grounding DINO-T + ellipse fit\n    out = []\n    for D in dials:\n        boxes = dbnet(D.crop)                     # positions only\n        sem = F.call(I, overlay(D.crop, boxes), schema=COARSE_CODE)  # one API call per image\n        ticks = tick_lattice(polar_unwrap(D.crop, D.pivot), sem.minors_per_major)\n        rng = full_circle if sem.kind in {'clock', 'meter_subdial'} else scale_arc(ticks)\n        cands = needle_sweep(D.crop, D.pivot, rng, variants=12, feat=dinov2_l18)  # top-3 peaks\n        H = enumerate_labellings(boxes, sem.values, ticks, sem.scale_type, sem.roles, cands)\n        scores = {h: S(h) for h in H}             # numerals + lattice + values + coupling\n        h_star = argmax(scores)\n        y = interpolate_local(h_star, refine_tip(cands[h_star.pointer], ticks))\n        rivals = [h for h in H if abs(value(h) - y) > tol(sem)]\n        m = scores[h_star] - max(scores[h] for h in rivals)\n        out.append((y, m, sharpness(cands)))\n    y, m, s = combine(out, sem)                   # decade coupling for multi-dial meters\n    if m < TAU_M or s < TAU_S:\n        return sem.own_reading, ABSTAIN\n    return (y, sem.unit), ANSWER",
+    "pseudocode": "def read_instrument(I, q, F, THR):            # THR frozen on 200 MeasureBench pilot dials\n    out = []\n    for D in detect_and_rectify(I):              # Grounding DINO-T + ellipse or axis fit\n        boxes = dbnet(D.crop)                     # positions only\n        sem = F.call(I, letter_marks(D.crop, boxes), schema=SEMANTICS)  # one API call\n        strip = unwrap(D)                         # polar for dials, axis-aligned for linear\n        ticks = tick_lattice(strip)               # peaks, major/minor split, local minor counts\n        if D.kind in {'gauge', 'clock', 'meter_subdial'}:\n            seeds = needle_sweep(D, feat=dinov2_l18, joint_clock=(D.kind == 'clock'))  # top-3, +-3 deg\n            inds = [refine_tip(D.native, D.pivot, s) for s in seeds]  # pixel-space axis fit -> (phi, q)\n        else:\n            inds = linear_indicator(D, sem)       # change-point or SAM 2 object endpoints\n        H = enumerate_labellings(boxes, sem.values, ticks, sem.scale_type, sem.roles, inds)\n        S = {h: score(h, prior_M=sem.minors_per_major, w=THR.weights) for h in H}\n        h_star = argmax(S)\n        y = interpolate_local(h_star, ticks)\n        rivals = [h for h in H if abs(value(h) - y) > 0.5 * minor_value(h_star)]\n        m = S[h_star] - max(S[h] for h in rivals)\n        out.append((y, m, quality(h_star)))\n    y, m, qual = combine(out, sem)               # decade or hand coupling across dials\n    if m < THR.tau_m or qual > THR.tau_q:\n        return sem.own_reading, ABSTAIN\n    return (y, sem.unit), ANSWER",
     "design_choices": [
-      "Frontier reads values but not positions: its unit and digit reading are strong [2510.26865][2604.22829] while fine spatial grounding is its named limit [2510.26865]; this also removes Reitsma's dominant OCR-recognition failure [2404.08785].",
-      "Joint ranking rather than level-by-level rounding: sequential unwrapping propagates early errors and joint enumeration guarantees the true labelling is checked [1608.05209]; this is presented as a recombination with phase unwrapping, not a deep analogy, because the whole lattice is visible on a dial.",
-      "Local interval interpolation on measured minor ticks rather than a global linear fit through numerals: a 1-2% of range interpolation error is about one minor division [2404.08785], which is MeasureBench's failure tolerance [2510.26865].",
-      "Full-range needle sweep rather than a window around the frontier reading: frontier readings can be a whole major interval off or collapse to 10:10 [2510.26865], so a frontier-centred window would systematically miss the needle.",
-      "Silhouette paste-and-compare in frozen layer-18 DINOv2 patches rather than a line fit: intermediate patches carry the positional information needed to read a geometric state without training [2311.18809], and an asymmetric silhouette resolves the tip/tail ambiguity Reitsma settles by heuristic [2404.08785].",
-      "Abstention independent of the frontier: the margin uses only local evidence, because VLM-derived confidence signals fail exactly where perception fails [2610.04836][2512.06373].",
-      "No training in the main path, so the method cannot overfit training designs, the failure that made trained pipelines collapse on MeasureBench [2510.26865]; the optional MeterFL-trained segmenter is reported as a separate variant."
+      "Credit and delta: the semantics-to-VLM, geometry-to-deterministic-pipeline split is the design recommendation of [2604.22829]; this paper's contribution is the first measured single-image instantiation on public real-image benchmarks, plus the labelling margin, the better-views control and frozen-threshold transfer, not the split itself.",
+      "The frontier reads values but not positions or counts: its unit and digit reading are strong [2510.26865][2604.22829] while fine spatial grounding and minor-tick counting are its named failures [2510.26865]; this also removes Reitsma's dominant OCR-recognition failure [2404.08785].",
+      "Letter marks, placed beside boxes: Set-of-Mark reports that numeric marks confuse GPT-4V on number-rich images and that centred marks can be misattributed [2310.11441]; the frontier's box-value accuracy is reported as a function of box density so this choice is checked.",
+      "Joint ranking of neighbouring labellings rather than sequential rounding (numeral -> major -> minor): an early wrong attachment cannot silently propagate, and the score gap to answer-changing rivals gives abstention for free; this is ordinary MAP-with-margin and is claimed only as a measured mechanism, with the sequential version as an ablation.",
+      "Local minor counting between measured majors rather than counting from the scale start as in MeterFL [2609.31998]: a missed tick then corrupts one interval rather than every later index.",
+      "Coarse-then-refine pointer localisation: FoundPose itself needs featuremetric refinement because 14 px patches limit precision [2311.18809]; here the precision stage is a pixel-space axis fit so that it cannot depend on patch size, and the frozen-feature sweep must earn its place against SAM 2 [2408.00714], radial-profile and pixel-space seeds.",
+      "Full-range candidate search rather than a window around the frontier reading: frontier readings can be a whole interval off or collapse to 10:10 [2510.26865].",
+      "Abstention independent of the frontier: VLM-derived confidence fails where perception fails [2610.04836][2512.06373][2608.17723].",
+      "Thresholds are set once and frozen: every cross-dataset and linear-scale number uses the 200-pilot-dial thresholds, so 'training-free generalises' is tested rather than asserted."
     ],
-    "theoretical_grounding": "In multi-frequency unwrapping the fringe order k = round(((f_h/f_l)Phi_l - phi_h)/2pi) is exact iff the combined phase error stays below half an order [1903.09836, Eq 8-11]. On a dial the analogous statement is: nearest-major assignment of numeral j is correct iff |alpha_j - theta_true(j)| < Delta_major/2. Dial hierarchies have ratios of 2, 5 or 10 minors per major, well below the roughly 16-period single-step limit reported for MF-TPU [1903.09836], so the condition is loose (about 13-27 degrees on common gauges). With n >= 2 numerals and a monotone, value-consistent assignment constraint, a wrong labelling requires several numerals to violate the condition in the same direction, which the joint score penalises. The margin m is a log-likelihood ratio between the best and best answer-changing labelling; thresholding it is the dial analogue of the single density threshold that replaced five hand-tuned filters in ToF unwrapping [1608.05209]. These are design arguments, not proofs; the pilot measures whether the condition actually holds on real web photos."
+    "theoretical_grounding": "Two simple conditions explain when the method should work and are measured rather than assumed. (1) Numeral attachment: the nearest-major assignment of numeral j is correct if |u_j - t_pi(j)| < Delta_major / 2, where Delta_major is the major-tick spacing; with 2, 5 or 10 minors per major this tolerance is about 13-27 degrees on common gauges. With n >= 2 numerals and a monotone, arithmetic (or monotone for non-linear) value constraint, a wrong labelling needs several numerals displaced in the same direction, which the joint score penalises. The 150 annotated held-out dials give the empirical distribution of |u_j - t_pi(j)| / Delta_major. (2) Reading precision: with local interpolation, reading error in minor divisions equals the angular error of phi plus tick-position error divided by the local minor spacing; for a 270-degree scale with 50 minors (5.4 degrees each), a 0.5-degree pointer error is under 0.1 division, well inside MeasureBench's per-image intervals [2510.26865]. The tip refinement fits a line to K = 24 cross-section centres; with sub-pixel centroid error sigma_p and needle length L px, the axis-angle error scales as about sigma_p / (L sqrt(K/12)), i.e. well under 0.5 degree for L >= 80 px and sigma_p <= 1 px, independent of the 14 px patch size. The margin is a log-score difference between the best and the best answer-changing labelling; thresholding it is standard selective prediction. These are design arguments, not proofs; the day-1-3 pilot measures whether they hold on web photos."
   },
   "model_details": {
-    "base_model": "No model is trained or fine-tuned in the main method. Frozen components: GPT-6 Astra (black-box API, default effort, one call per image); DINOv2 ViT-L/14 layer-18 patch descriptors [2311.18809]; DBNet ResNet-18 with public scene-text weights [1911.08947]; Grounding DINO-T (Swin-T, 172M) [2303.05499]. Optional variant: a 30.6M-parameter U-Net tick/pointer segmenter as in MeterFL [2609.31998].",
+    "base_model": "No model is trained or fine-tuned in the main method. Frozen components: GPT-6 Astra (black-box API, default effort, one call per image); DINOv2 ViT-L/14 layer-18 patch descriptors [2311.18809]; SAM 2 (image mode, point/box prompts) for the hub-prompted needle baseline and ruler object masks [2408.00714]; DBNet ResNet-18 with public scene-text weights [1911.08947]; Grounding DINO-T [2303.05499]. Local coarse-code variant: Qwen3-VL-4B in place of Astra. Pre-committed fallback: 30.6M U-Net tick/pointer segmenter as in MeterFL [2609.31998].",
     "training": {
-      "method": "No model training for the main method (training-free inference with hand-specified scores). Optional variant only: supervised segmentation of tick and pointer masks on the public MeterFL masks, never on MeasureBench or TickTockVQA images.",
+      "method": "No model training for the main method (training-free inference with a hand-specified score whose five weights and two thresholds are set once on 200 MeasureBench pilot dials). Fallback only: supervised segmentation of tick and pointer masks on MeterFL train masks deduplicated against MeasureBench, never on any test image. Clock baseline only: if the It's About Time checkpoint is not downloadable, retrain its public code on its synthetic generator, reported as such [2111.09162].",
       "objective_functions": [
-        "Purpose: pick the scale labelling that best explains numerals, ticks and pointers. Formally: S(h) = sum_j log N(alpha_j - theta_pi(j); 0, sigma_n^2) + lambda_1 sum_k log p(n_k | M, rho_k) + lambda_2 log p(V_h | s) + lambda_3 log p(phi | rho, coupling), where n_k is the corrected minor count in major interval k, M the frontier-stated minors per major, rho_k the spacing regularity, p(V_h | s) rewards arithmetic (linear) or monotone (non-linear) value progressions, and the coupling term enforces theta_h = 30h + m/2 on clocks or decade consistency on meters.",
-        "Purpose: locate the pointer as the pose at which pasting a needle changes the image least. Formally: phi* = argmax_{phi, s} (1/|P(phi,s)|) sum_{p in P(phi,s)} cos(f_18(I)_p, f_18(I composited with silhouette(phi, s))_p), with P(phi,s) the patches the silhouette touches and f_18 frozen DINOv2 layer-18 descriptors.",
-        "Purpose: decide when to answer. Formally: answer iff m = S(h*) - max_{h: |V_h(phi) - V_h*(phi)| > tol} S(h) >= tau_m and sharpness >= tau_s, with tau chosen on the pilot split to maximise accuracy at the frontier-fallback operating point.",
-        "Purpose (optional segmenter only): learn tick and pointer masks. Formally: L = L_CE(mask_pred, mask_gt) + L_Dice(mask_pred, mask_gt) on MeterFL training masks."
+        "Purpose: pick the scale labelling that best explains numerals, ticks and indicators. Formally: S(h) = sum_j log N(u_j - t_pi(j); 0, sigma_n^2) + lambda_1 sum_k log p(n_k | M_L, delta) + lambda_M log p(M_L | M_F) + lambda_2 log p(V_h | s) + lambda_3 log p(phi | rho, coupling), where n_k is the corrected minor count in major interval k, M_L the locally counted mode, M_F the frontier's stated value (weak prior, lambda_M small and fixed), p(V_h | s) rewards arithmetic (linear) or monotone (non-linear) value progressions, and the coupling term enforces theta_h = 30h + m/2 on clocks or decade consistency on meters.",
+        "Purpose: find coarse pointer candidates robust to shadows and counterweights. Formally: phi_0 = argmax_{phi, s} (1/|P(phi,s)|) sum_{p in P(phi,s)} cos(f_18(I)_p, f_18(I composited with silhouette(phi, s))_p), with P(phi,s) the patches the silhouette touches and f_18 frozen DINOv2 layer-18 descriptors.",
+        "Purpose: refine the pointer axis at native resolution. Formally: minimise sum_k w_k rho_Huber(dist(p_k, line(c', phi))) subject to ||c' - c|| <= 2 px, with p_k the parabolic-refined cross-section centres on K = 24 circles.",
+        "Purpose: decide when to answer. Formally: answer iff m = S(h*) - max_{h: |V_h(phi) - V_h*(phi)| > 0.5 minor} S(h) >= tau_m and q <= tau_q, with tau_m, tau_q chosen on the 200 pilot dials to maximise value+unit accuracy at 100% coverage with fallback, then frozen.",
+        "Purpose (fallback segmenter only): learn tick and pointer masks. Formally: L = L_CE(mask_pred, mask_gt) + L_Dice(mask_pred, mask_gt) on MeterFL training masks."
       ],
-      "adaptation": "None for the main method; optional segmenter trained from scratch (full training, 30.6M parameters) in a few GPU-hours on one RTX 4090.",
+      "adaptation": "None for the main method; fallback segmenter trained from scratch (30.6M parameters) in a few GPU-hours on one RTX 4090.",
       "key_hyperparameters": {
-        "polar_strip": "1440 angular bins x 128 radial bins over 0.6-1.0 rim radius",
-        "needle_sweep": "coarse 2 deg with 3 variants; refine top-3 peaks at 0.25 deg with 12 variants; full scale arc on gauges, full circle on clocks and meter sub-dials",
+        "polar_strip": "2880 angular bins (0.125 degree) x 128 radial bins over 0.6-1.0 R, at native resolution",
+        "needle_sweep": "coarse 2 deg with 3 variants; top-3 peaks at 0.5 deg with 12 variants; output phi_0 +- 3 deg",
+        "tip_refinement": "K = 24 circles in [0.35 R, 0.9 R]; 0.05 deg sampling; Huber IRLS; pivot tolerance 2 px; circle rejection at 3 px residual",
         "dinov2_input": "448 px rectified crop, layer 18 of ViT-L/14",
-        "labelling_neighbourhood": "numeral-to-major offset in {-1,0,+1}; at most one minor insertion or deletion per major interval; both directions; all pointer-role permutations",
+        "labelling_neighbourhood": "numeral-to-major offset in {-1,0,+1}; at most one minor insertion or deletion per major interval; both directions; all indicator-role permutations",
         "sigma_n": "one quarter of the measured major-tick spacing",
-        "lambda_1, lambda_2, lambda_3, tau_m, tau_s": "set on the pilot split only, then frozen for all test runs",
-        "frontier_calls_per_image": "1 (plus 1 in the optional hand-back ablation)",
-        "optional_segmenter": "U-Net 30.6M, Adam lr 1e-3, 100 epochs on MeterFL masks"
+        "frozen_on_pilot": "lambda_1, lambda_2, lambda_3, lambda_M, tau_m, tau_q (sigma_n fixed by rule)",
+        "frontier_calls_per_image": "1 (plus 1 in the hand-back ablation)",
+        "fallback_segmenter": "U-Net 30.6M, Adam lr 1e-3, 100 epochs on deduplicated MeterFL train masks"
       }
     }
   },
   "comparison_to_sota": {
     "related_methods": [
-      "GPT-6 Astra alone: frontier VLM at default, high and xhigh reasoning effort, optionally with its built-in Python/crop tools [2609.35718].",
-      "Gemini-2.5-Pro on MeasureBench: best published 31.5% on real dials (2025 figure) [2510.26865].",
-      "TriSCA: three-stage trained Qwen3-VL-4B, 28.5% on MeasureBench real dials [2604.26614].",
+      "GPT-6 Astra alone: default, high and xhigh reasoning effort, with and without its built-in Python/crop tools [2609.35718].",
+      "GPT-6 Astra with better views: the method's rectified crop, unwrapped strip and lettered tick and numeral marks as a visual prompt, without the computed answer (Set-of-Mark style [2310.11441]).",
+      "Lost in Motion design guidance: VLM for semantics, edge/Hough geometry for the needle, rule-based validation [2604.22829].",
+      "Gemini-2.5-Pro on MeasureBench: 31.5% real dials, 21.9% real linear (2025 figures) [2510.26865].",
+      "TriSCA: trained Qwen3-VL-4B, 28.5% on MeasureBench real dials [2604.26614].",
       "Reitsma et al.: modular trained gauge reader with OCR numeral anchoring, 8.5% on MeasureBench real images [2404.08785][2510.26865].",
-      "MeterFL pipeline: trained U-Net tick segmentation with polar unwrapping and metadata-supplied tick counting [2609.31998].",
-      "DialBench MRLM: end-to-end trained pointer-meter VLM with template cross-attention [2511.21982].",
-      "Swap-DPO on TickTockVQA: LoRA SFT + DPO clock reader [2603.08011].",
-      "SEVEX: searched task-wise visual prompts for a black-box VLM [2603.16250]."
+      "MeterFL pipeline: trained U-Net tick segmentation, polar unwrap and metadata-supplied counting, 87.2% Acc on its own test set [2609.31998].",
+      "DialBench MRLM: end-to-end trained pointer-meter VLM on RPM-10K [2511.21982].",
+      "It's About Time: trained 720-state clock reader, 18.54% full-time on TickTockVQA [2111.09162][2603.08011].",
+      "Swap-DPO on TickTockVQA: LoRA SFT + DPO clock reader [2603.08011]."
     ],
     "key_differences": [
-      "vs. Astra with more effort or built-in tools: the frontier never reads an angle; one default-effort call supplies only semantics, so the cost does not scale with reasoning effort.",
-      "vs. TriSCA, DialBench and Swap-DPO: no weights are changed and no dial data is trained on, so the method applies to an API-only model and cannot overfit training designs.",
-      "vs. Reitsma: the frontier replaces OCR recognition, a local detector supplies positions, readings come from measured minor ticks rather than linear interpolation between numerals, non-linear scales need no global model, and a silhouette replaces the symmetric line fit plus 'closer end' heuristic.",
-      "vs. MeterFL: v_min, delta_v and tick values are read by the frontier rather than supplied, minors are counted locally between measured majors, and alternative labellings are ranked with a margin instead of a single deterministic count from the scale start.",
-      "vs. SEVEX and other visual prompting: the answer-bearing measurement is computed locally and handed over, rather than the frontier reading edited pixels.",
-      "vs. RSure-style or rethink-turn arbitration: the reliability signal (labelling margin and needle sharpness) never uses the frontier's own visual reading."
+      "vs. Lost in Motion [2604.22829]: that paper states the split as guidance from a three-instrument video study and proposes Hough geometry; this paper builds it for single images, replaces line fits with a ranked labelling plus a pixel-space axis fit, adds a frontier-independent margin, and measures it on five public real-image sets with frozen thresholds.",
+      "vs. Astra with more effort, tools or better views: the frontier never reads a position; one default-effort call supplies only semantics, and the better-views baseline tests whether showing Astra the same measured views would be enough.",
+      "vs. TriSCA, DialBench, It's About Time and Swap-DPO: no weights are changed and nothing is trained on instrument data, so the method applies to an API-only model; cross-dataset transfer with frozen thresholds is measured, not asserted.",
+      "vs. Reitsma: the frontier replaces OCR recognition, readings come from measured minor ticks rather than linear interpolation between numerals, non-linear scales need no global model, and a coarse-seed-plus-axis-fit replaces the segmented line fit and 'closer end' heuristic.",
+      "vs. MeterFL: v_min, delta_v and tick values are read by the frontier rather than supplied, minors are counted locally, and alternative labellings are ranked with a margin instead of one deterministic count from the scale start.",
+      "vs. RSure-style or rethink-turn arbitration: the reliability signal (labelling margin and axis-fit quality) never uses the frontier's own visual reading."
     ]
   },
   "proposed_evaluation": {
-    "evaluation_setting": "Single-image analog reading with a black-box frontier VLM (GPT-6 Astra) as the system being helped, under the paper's constraints: all experiments finish by 2026-11-09, total API spend at most about US$1,000, local compute on one RTX 4090 (24 GB). Timeline: 2026-10-19 to 10-25 build the pipeline using only TickTockVQA train images and MeterFL for debugging, and hand-annotate major-tick angles, numeral-to-tick assignments and needle angles on the pilot dials; 10-26 to 10-29 pilot and gates; 10-30 to 11-06 full test runs and ablations; 11-07 to 11-09 buffer. Pilot (gating, threshold setting only): 200 MeasureBench real dials stratified by tags assigned before any run (single-pointer gauges, clocks, multi-dial meters, glare or shadow, counterweighted or tapered needles, non-linear scales), plus 150 TickTockVQA train-split clocks. Test (reported): the remaining 511 MeasureBench real dials and 1,000 randomly sampled TickTockVQA test images, never touched during development. Sizing: with a paired design, if about 30% of items are discordant between two systems the paired standard error at n = 200 is about 3.9 points, so an 8-point gap has a 95% bootstrap lower bound above zero; at the earlier n = 100 it would not (reviewer carry-forward). Pilot-gated commitments: G1, C3 with fallback beats the best Astra configuration (max over default, high, xhigh with built-in tools) on the 200 pilot dials by at least 15 points with paired-bootstrap 95% lower bound > 0; G2, C3 beats hybrid B by at least 8 points with lower bound > 0; G3, on the 150 pilot clocks C3 beats the best Astra configuration by at least 20 points of exact-minute accuracy; G0 (component), numeral-to-major assignment is correct on at least 85% of pilot dials that have two or more detected numerals and the lattice is resolvable (coverage) on at least 70%. If G1 and G3 pass, the paper commits to the pilot's paired-bootstrap lower bound as the minimum gain on the held-out test sets. If G2 fails, the paper reports hybrid B (training-free frontier + ranked lattice + Hough needle) as the method and the needle sweep as a negative result. If G1 fails, the run stops and the failure analysis (oracle splits) is the outcome. Budget rule: per-call cost and latency are measured on the first 50 pilot images for each Astra configuration; with 1,861 images in total and four configurations, if the projected spend exceeds US$700 the xhigh-with-tools baseline is run only on the 711 dials and 300 test clocks, keeping US$300 in reserve for ablations and reruns.",
+    "evaluation_setting": "Single-image instrument reading with GPT-6 Astra as the black-box system being helped, inside the Constraints: all experiments finish by 2026-11-09, API spend at most US$1,000 with per-call cost measured, local compute <= 40 GPU-days on 24 GB GPUs (estimated about 20: about 30 s of ViT-L passes per dial image and 55 s per clock for the sweep over about 8,700 local runs, x3 for ablations, plus SAM 2, Qwen3-VL-4B and a possible 2-3 GPU-day clock-baseline retrain). DATA AVAILABILITY (checked 2026-10-18): MeasureBench and TickTockVQA are public; MeterFL is public on GitHub with train/test split and readings [2609.31998]; RPM-10K is downloadable with an 8,730/2,000 instance-disjoint split and released MRLM weights [2511.21982]; InSituMeasure has no public release (no URL in the paper, none found by search) [2609.04014], so it is used only if released before 2026-11-02, on its analog-pointer categories with the same frozen thresholds. SPLITS: MeasureBench dials 200 pilot (the only tuning data) / 511 test, all 511 tagged by family and nuisance before any run, 150 of them additionally annotated with major-tick positions, numeral-to-tick assignment and pointer angles by annotators who never see predictions; MeasureBench linear 80 development (indicator-module debugging only, no weight or threshold change) / 281 test; TickTockVQA 150 train-split clocks (debugging and G3 gate only, not thresholds) / a seeded random 1,000-image test list released with the paper, plus the full 5,247-image test set for local-only components and It's About Time; MeterFL 269 reading test images minus any dHash near-duplicate of a MeasureBench image (MeterFL lists MeasureBench as an image source); RPM-10K a released stratified 400-image sample of the 2,000 held-out images for API runs, all 2,000 for the fully local variant and MRLM. FREEZE: on 2026-10-28 the thresholds, code hash and all image lists are committed to a timestamped public repository; nothing is changed afterwards. SCHEDULE: day 1-3 (10-19 to 10-21) G0 component pilot and strongest-Astra measurement on 50 tagged pilot dials, before the needle sweep is built, with availability checks for every checkpoint and dataset; 10-22 to 10-27 needle sweep, refinement, needle baselines, clock and linear modules, full 200-pilot run and gates G1-G3; annotation of the 150 held-out dials runs in parallel from day 1; 10-28 freeze; 10-28 to 11-05 test runs; 11-06 to 11-09 buffer. G0 GO/NO-GO (10-21, 50 pilot dials): (a) lattice resolvable on >= 60% and numeral-to-major assignment correct on >= 80% of dials with >= 2 detected numerals; (b) frontier semantics + ground-truth lattice and pointer (oracle geometry) reads >= 80% correctly; (c) Astra-best on the 50 dials <= 50% value+unit. If (a) fails with the training-free extractor but passes with the MeterFL-trained segmenter, switch to it (MeterFL then leaves the cross-dataset set). If (b) fails, the semantic channel is the bottleneck and the run stops. If (c) fails, +15 over Astra-best is infeasible at the committed selective operating point and the run stops; the outcome is a measurement paper (Astra configurations and oracle splits). BUDGET RULE: on days 1-3 measure mean cost per default call c_0 and per xhigh+tools call c_x. Tier 1 (always): Astra-default plain, the method's semantic call and the better-views call on all 2,891 API images (711 + 361 + 1,150 + 269 + 400). Tier 2: xhigh+tools plain on 200 pilot + 511 test dials, 300 of the 1,000 clocks and 150 each of linear, MeterFL and RPM-10K; better-views xhigh+tools on the 711 dials; high effort on the 200 pilot dials (to select Astra-best). Tier 3: a second sample of Astra-default and Astra-best on 200 test dials for variance. If projected Tier 1 + Tier 2 exceeds US$800, Tier 2 subsets outside the 711 dials are cut first, never below 511 test dials; US$200 is held in reserve. ASTRA-BEST is selected on the pilot among {default, high, xhigh+tools, better-views default, better-views xhigh+tools} and fixed for test; all configurations run on a set are reported. SIZING: with a paired design and about 30% discordant items, the paired SE is about 3.9 points at n = 200 and about 2.4 at n = 511, so +15 is resolvable on the test set, and nuisance and family claims are made only on subsets of at least 100 test images.",
     "benchmarks": [
       {
-        "name": "MeasureBench real-world dial subset (711 images; 200 pilot, 511 held-out test) [2510.26865]",
-        "task_type": "visual measurement reading (numeric value + unit, per-image interval scoring)",
+        "name": "MeasureBench real-world dial subset (711: 200 pilot for tuning, 511 held-out test, 150 of them geometry-annotated) [2510.26865]",
+        "task_type": "visual measurement reading (value + unit, per-image interval scoring)",
         "newly_constructed": false
       },
       {
-        "name": "TickTockVQA (150 train-split clocks for the pilot, 1,000 random test images for reporting) [2603.08011]",
+        "name": "MeterFL real test set (269 reading-decodable images, MeasureBench near-duplicates removed) with frozen thresholds [2609.31998]",
+        "task_type": "cross-dataset analog-meter reading; Acc within two minor divisions and %FS",
+        "newly_constructed": false
+      },
+      {
+        "name": "RPM-10K held-out split of DialBench (released 400-image stratified sample for API runs; all 2,000 for local runs) with frozen thresholds [2511.21982]",
+        "task_type": "cross-dataset pointer-meter reading; Accuracy-epsilon (error <= 1% of range) and within half a minor division",
+        "newly_constructed": false
+      },
+      {
+        "name": "MeasureBench real-world linear subset (361: 80 development, 281 test) with frozen dial thresholds [2510.26865]",
+        "task_type": "linear-scale measurement reading (value + unit)",
+        "newly_constructed": false
+      },
+      {
+        "name": "TickTockVQA (150 train-split clocks for debugging and gating; a released seeded 1,000-image test list; full 5,247-image test set for local-only components and It's About Time) [2603.08011]",
         "task_type": "analog clock reading (hour and minute)",
         "newly_constructed": false
       },
       {
-        "name": "MeterFL (1,382 mask-annotated meter images), a held-out portion not used to train the optional segmenter [2609.31998]",
-        "task_type": "component diagnostic: tick and pointer localisation against mask annotations, and reading error in %FS",
+        "name": "InSituMeasure analog-pointer categories, only if publicly released before 2026-11-02 [2609.04014]",
+        "task_type": "cross-dataset industrial gauge reading with answerability labels",
         "newly_constructed": false
       },
       {
-        "name": "Pilot annotation layer on the 200 MeasureBench pilot dials: major-tick angles, numeral-to-tick assignment, needle angle, nuisance tags",
-        "task_type": "oracle splits and component accuracy (not a new benchmark; annotations released)",
+        "name": "Annotation layer: family and nuisance tags on all 511 test dials, 361 linear items and 1,000 test clocks (clock type: Arabic, Roman, no numerals, illustrated); geometry annotations on 150 test dials and the 200 pilot dials; all released",
+        "task_type": "per-family breakdowns, component accuracy and oracle splits (not a new benchmark)",
         "newly_constructed": true
       }
     ],
     "baselines": [
-      "GPT-6 Astra alone, default reasoning effort (cost measured)",
-      "GPT-6 Astra alone, high reasoning effort (cost measured)",
-      "GPT-6 Astra at xhigh effort with built-in tool use (Python/crop) enabled, the 'own tools' baseline the reviewer requested [2609.35718] (cost measured)",
-      "Hybrid A: same frontier call + Reitsma-style RANSAC linear angle-to-value fit through numeral angles + Hough/line needle with closer-end tip rule [2404.08785]",
-      "Hybrid B: same frontier call + C3's ranked tick lattice + Hough/line needle (isolates the needle sweep)",
-      "Open local VLM zero-shot: Qwen3-VL-4B, reported at 12.0% on MeasureBench real dials [2604.26614], rerun under our prompt",
-      "Published references, not rerun: Gemini-2.5-Pro 31.5% and Reitsma 8.5% [2510.26865]; TriSCA 28.5% [2604.26614]; on TickTockVQA, real-data fine-tuned Qwen2.5-VL-7B 20.34% full-time accuracy [2603.08011]"
+      "GPT-6 Astra alone at default, high (pilot) and xhigh effort with built-in Python/crop tools [2609.35718], cost and latency measured",
+      "GPT-6 Astra with better views (rectified crop + unwrapped strip + lettered major ticks and numeral boxes, no computed answer), at default and xhigh+tools [2310.11441]",
+      "Astra-best: the configuration above with the highest pilot accuracy, fixed for test",
+      "Lost-in-Motion hybrid [2604.22829]: same frontier call + Reitsma-style RANSAC linear angle-to-value fit through numeral angles [2404.08785] + Hough needle",
+      "Needle baseline (a): SAM 2 mask prompted with a positive click at the detected hub and negative clicks on the rim [2408.00714], skeleton or principal-axis fit, asymmetric tip rule (tip = mask extremity farther from the pivot), then the same tip refinement",
+      "Needle baseline (b): radial profile, the needle-colour likelihood plus edge energy integrated along rays from the pivot over [0.2 R, 0.9 R] at 0.25 degree steps, with tip side chosen by the longer above-threshold run, then the same tip refinement",
+      "Needle baseline (c): pixel-space paste-and-compare, the identical silhouette sweep scored by Lab colour plus gradient-orientation correlation instead of DINOv2 features, then the same tip refinement",
+      "Fully local variant: Qwen3-VL-4B as the semantic reader, reported as a headline row",
+      "Trained references rerun where public: It's About Time on the 1,000 list, the full TickTockVQA test set and MeasureBench clocks [2111.09162]; MRLM on RPM-10K [2511.21982]; Swap-DPO if its checkpoint is public, otherwise cited [2603.08011]",
+      "Published references, not rerun: Gemini-2.5-Pro 31.5% dials / 21.9% linear and Reitsma 8.5% [2510.26865]; TriSCA 28.5% [2604.26614]; MeterFL trained pipeline 87.2% and zero-shot frontier VLM 49.1% Acc [2609.31998]"
     ],
     "main_metrics": [
-      "MeasureBench value accuracy (interval match) and value+unit accuracy at 100% coverage (frontier fallback on abstention)",
-      "Selective accuracy and coverage at the pilot-fixed thresholds; area under the risk-coverage curve",
-      "Error-detection AUROC of the labelling margin, the needle sharpness, Astra's verbalised confidence and Astra 3-sample self-agreement, overall and on the subset where Astra's three samples agree but are wrong",
-      "Error magnitude histogram in minor-tick and major-interval units",
-      "TickTockVQA exact-minute accuracy, hour accuracy, minute accuracy, Tol-1 and Tol-5, MAE in minutes, hour/minute swap rate",
-      "Component metrics: numeral detection recall, numeral-to-major assignment accuracy, tick recall/precision, needle angle error in degrees (pilot annotations and MeterFL)",
-      "Oracle splits: accuracy with ground-truth needle angle (scale-only) and with ground-truth scale labelling (needle-only)",
-      "Measured API cost in US$ per image, frontier calls per image, end-to-end latency, local GPU-seconds per image"
+      "Value and value+unit accuracy at 100% coverage (fallback on abstention), with paired-bootstrap 95% CIs",
+      "Gain decomposition against Astra-best and against Astra-default: coverage, the method's selective accuracy, Astra's accuracy on the same covered items, and Astra's accuracy on the abstained items",
+      "Selective accuracy and coverage at the frozen thresholds; area under the risk-coverage curve",
+      "Error detection AUROC on one error definition (the method's pre-fallback reading is wrong) for every signal: labelling margin, axis-fit quality, Astra verbalised confidence and Astra 3-sample agreement; separately, each Astra signal for Astra's own errors; also on items where Astra's samples agree but are wrong",
+      "Per-family accuracy, coverage and gain: single-pointer gauges, clocks, multi-dial meters, linear vs non-linear dial scales, linear instruments by type, TickTockVQA clock types",
+      "Component metrics on the 150 annotated test dials: DBNet numeral recall, numeral-to-major assignment accuracy, tick recall/precision, local minors-per-major accuracy vs Astra's M_F accuracy, Astra box-value accuracy vs box density (boxes per 90 degrees), pointer angle error in degrees by seed and with or without refinement, peak sharpness by nuisance tag",
+      "Oracle splits on the 150 annotated dials: ground-truth pointer (scale-only) and ground-truth labelling (pointer-only)",
+      "TickTockVQA exact-minute accuracy, hour and minute accuracy, Tol-1 and Tol-5, MAE in minutes, hour/minute swap rate",
+      "MeterFL Acc and median %FS; RPM-10K Accuracy-epsilon and within-half-minor accuracy",
+      "Measured API cost per image, input and output tokens of the semantic call vs a plain Astra call, frontier calls per image, end-to-end latency including local GPU-seconds; Astra run-to-run SD from Tier 3"
     ],
     "ablations": [
-      "Joint labelling ranking vs sequential level-by-level rounding (numeral -> major -> minor) on the same lattice",
-      "Numeral positions from DBNet vs positions estimated by the frontier ('rough clock position' prompt, the C3 draft design)",
-      "Local minor counting between measured majors vs MeterFL-style counting from the scale start",
-      "Needle localisation: paste-and-compare sweep vs Hough line (hybrid B) vs line fit on a DINOv2-feature edge map; reported overall and per nuisance tag",
-      "Sweep range: full arc/circle vs window of +-1 major interval around y_F vs +-1 minor tick around y_F",
+      "Joint labelling ranking vs sequential rounding (numeral -> major -> minor) on the same lattice",
+      "Local minor counting vs MeterFL-style counting from the scale start; frontier M_F as soft prior vs hard constraint vs removed",
+      "Letter marks vs numeric marks on the numeral boxes; DBNet positions vs positions estimated by the frontier",
+      "Pointer seed: DINOv2 sweep vs pixel-space sweep vs SAM 2 hub mask vs radial profile vs Hough, each with and without the tip refinement",
+      "Candidate range: full arc or circle vs +-1 major interval around y_F vs +-1 minor around y_F",
       "Clock-hand coupling (joint 720-state sweep) and decade coupling on/off",
-      "Abstention signal: labelling margin vs needle sharpness vs their combination vs frontier self-agreement",
-      "Tick extraction: training-free radial-profile peaks vs MeterFL-trained 30.6M U-Net",
-      "Evidence use: C3 answer returned directly vs a second frontier call that composes the final answer from the evidence (counts how often the frontier overrides correct evidence)",
-      "Coarse-code reader: GPT-6 Astra vs local Qwen3-VL-4B, to measure how much of the gain needs the frontier at all"
+      "Abstention signal: margin vs axis-fit quality vs both vs Astra self-agreement",
+      "Tick extraction: training-free peaks vs the MeterFL-trained U-Net (reported on non-MeterFL sets)",
+      "Evidence use: answer returned directly vs a second frontier call composing the answer from the evidence (how often Astra overrides correct evidence)",
+      "Semantic reader: GPT-6 Astra vs Qwen3-VL-4B"
     ]
   },
   "falsifiable_predictions": [
     {
-      "pillar": "Overall accuracy and cost change (pilot-gated, G1)",
-      "prediction": "Predicted, not observed: on the 511 held-out MeasureBench real dials, C3 with frontier fallback exceeds the best GPT-6 Astra configuration (including xhigh with built-in tools) by at least 15 points of value+unit accuracy, at no more than 1.2x Astra-default API cost per image.",
-      "kill_condition": "The pilot gain over the best Astra configuration is below 15 points or its paired-bootstrap 95% lower bound is at or below zero; or Astra xhigh with built-in tools comes within 5 points of C3 at no more than 2x C3's API cost per image."
+      "pillar": "Day-1-3 component pilot and strongest-Astra measurement (G0, go/no-go)",
+      "prediction": "Predicted, not observed: on 50 tagged pilot dials the training-free lattice is resolvable on >= 60%, numeral-to-major assignment is correct on >= 80% of dials with >= 2 detected numerals, oracle-geometry reading with frontier semantics is >= 80%, and Astra-best reads <= 50% value+unit.",
+      "kill_condition": "Assignment < 70% with both the training-free and the MeterFL-trained extractor, or oracle-geometry reading < 70%, or Astra-best > 55%: the run stops on 2026-10-21 and the method paper is not written."
     },
     {
-      "pillar": "Joint labelling ranking (the transferred unwrapping element)",
-      "prediction": "Predicted: on pilot dials with two or more detected numerals, numeral-to-major assignment is correct on at least 85%, and joint ranking cuts errors of exactly one minor or one major tick by at least 40% relative to sequential rounding on the same lattice.",
-      "kill_condition": "Assignment accuracy below 70%, or joint ranking within 2 points of sequential rounding in overall accuracy."
+      "pillar": "Headline accuracy, absolute floor and gain decomposition (G1)",
+      "prediction": "Predicted: on the 511 held-out MeasureBench dials, value+unit accuracy at 100% coverage is >= 50% absolute and >= Astra-best + 15 points (paired-bootstrap 95% lower bound > 0) at <= 1.3x Astra-default measured API cost per image; in the decomposition, coverage >= 50%, selective accuracy >= 75%, Astra-best accuracy on the covered items <= 55%, and the fallback term costs at most 3 points.",
+      "kill_condition": "Gain < 10 points or lower bound <= 0 on the pilot (gate) or test; or absolute accuracy < 45%; or Astra-best accuracy on covered items >= 60% (the method only answers dials Astra already reads); or Astra xhigh+tools within 5 points at <= 2x the method's cost."
     },
     {
-      "pillar": "Paste-and-compare needle sweep (G2)",
-      "prediction": "Predicted: C3 beats hybrid B by at least 8 points overall on the pilot (lower bound above zero) and by at least 15 points on the shadow/glare, counterweight, tapered-needle and multi-hand subsets, while staying within 3 points on crisp single needles.",
-      "kill_condition": "Overall gain over hybrid B below 4 points, or nuisance-subset gain below 8 points; in that case hybrid B becomes the reported method and the sweep is reported as negative."
+      "pillar": "Cross-dataset transfer with frozen thresholds (G4)",
+      "prediction": "Predicted: with every weight and threshold frozen from the MeasureBench pilot, the method beats Astra-default by >= 10 points on MeterFL test (Acc within two minor divisions, MeasureBench near-duplicates removed) and by >= 10 points on the 400 RPM-10K held-out images (within half a minor division), reaching >= 65% MeterFL Acc, with margin AUROC >= 0.75 on each set.",
+      "kill_condition": "Gain < 5 points on either set, or margin AUROC < 0.65 on either: the claim that training-free reading transfers across datasets is withdrawn and reported as negative."
+    },
+    {
+      "pillar": "Measurement vs better views (G5)",
+      "prediction": "Predicted: on the 511 test dials the method beats the best better-views Astra configuration by >= 10 points, and better views recover at most one third of the method's gain over plain Astra-default.",
+      "kill_condition": "Better-views Astra within 5 points of the method: the contribution is reframed as visual prompting and the local-measurement claim is dropped."
+    },
+    {
+      "pillar": "Pointer localisation: frozen-feature sweep and tip refinement (G2)",
+      "prediction": "Predicted: with the same refinement for every seed, the DINOv2 sweep beats the best of SAM 2 hub mask, radial profile and pixel-space sweep by >= 5 points overall and >= 10 points on the pooled shadow/glare, counterweight, tapered or hollow and multi-hand test dials (n >= 100); refinement cuts median pointer error by >= 50% for every seed.",
+      "kill_condition": "Gain over the best alternative seed < 2 points overall or < 5 on the pooled nuisance subset: the best alternative becomes the reported seed; if the pixel-space sweep matches DINOv2 within 2 points, the claim is restated as the silhouette sweep, not the frozen features."
+    },
+    {
+      "pillar": "Joint labelling ranking and local counting",
+      "prediction": "Predicted: on the 150 annotated test dials numeral-to-major assignment is correct on >= 85% of dials with >= 2 detected numerals; joint ranking cuts errors of exactly one minor or one major division by >= 40% relative to sequential rounding; local minors-per-major is correct on >= 90% of resolvable dials vs <= 75% for Astra's M_F.",
+      "kill_condition": "Assignment < 70%, or joint ranking within 2 points of sequential rounding in overall accuracy, or local counting no more accurate than M_F."
     },
     {
       "pillar": "Frontier-independent abstention",
-      "prediction": "Predicted: the labelling margin detects C3's errors with AUROC at least 0.80 overall and at least 0.75 on items where Astra's three samples agree but are wrong, where Astra's verbalised confidence stays at or below 0.60 AUROC; at the pilot-fixed threshold C3 reaches at least 75% selective accuracy at coverage of at least 50%.",
-      "kill_condition": "Margin AUROC below 0.70 overall, or selective accuracy below 65% at 50% coverage."
+      "prediction": "Predicted: on the 511 test dials the margin detects the method's errors with AUROC >= 0.80 overall and >= 0.75 on items where Astra's three samples agree but are wrong, where Astra's verbalised confidence and agreement detect the same errors at <= 0.60.",
+      "kill_condition": "Margin AUROC < 0.70 overall, or selective accuracy < 65% at 50% coverage."
     },
     {
-      "pillar": "Clock reading with hand coupling (G3)",
-      "prediction": "Predicted: on 1,000 TickTockVQA test images, C3 exceeds the best Astra configuration by at least 20 points of exact-minute accuracy and halves the hour/minute swap rate; removing the coupling costs at least 5 points.",
-      "kill_condition": "Gain below 10 points over the best Astra configuration, or coupling ablation within 2 points."
+      "pillar": "Clock reading vs frontier and trained specialist (G3)",
+      "prediction": "Predicted: on the released 1,000-image TickTockVQA list, exact-minute accuracy is >= Astra-best + 20 points and >= It's About Time + 10 points (training-free vs trained specialist); the hour/minute swap rate is at most half Astra's; removing the hand coupling costs >= 5 points; coverage on illustrated and no-numeral clocks is reported separately and predicted below 40%.",
+      "kill_condition": "Gain < 10 points over Astra-best, or below It's About Time, or coupling ablation within 2 points."
     },
     {
-      "pillar": "Full-range sweep vs frontier-centred window",
-      "prediction": "Predicted: a +-1 minor-tick window centred on Astra's reading loses at least 10 points on clocks and at least 5 points on dials relative to the full-range sweep, because the frontier reading is often more than one interval off.",
-      "kill_condition": "The frontier-centred window matches the full-range sweep within 2 points on both sets, which would mean the frontier reading is already a valid coarse code and the extra search is unneeded."
+      "pillar": "Transfer to linear scales",
+      "prediction": "Predicted: on the 281 held-out MeasureBench linear items, with the dial-pilot thresholds frozen and vernier and composite items routed to fallback, value+unit accuracy is >= Astra-default + 8 points, with coverage >= 40% on non-vernier items.",
+      "kill_condition": "Gain < 4 points or margin AUROC < 0.65 on linear items: the paper states that the labelling margin does not transfer beyond circular dials."
     }
   ],
   "limitations": [
-    "Scope is analog dials and clocks; MeasureBench's 361 linear instruments, 96 digital and 104 composite items are not addressed, and the method needs a visible tick ring or numerals.",
-    "On low-resolution or heavily blurred photos minor ticks may not be resolvable after rectification; the method then abstains, so coverage, not accuracy, caps the gain, and the training-free rectification and lattice extraction are the stages where earlier pipelines broke [2510.26865][2404.08785].",
-    "The phase-unwrapping framing mostly re-describes ordinary tick counting because the whole lattice is visible; the substantive borrowings are joint labelling enumeration and margin-based abstention [1608.05209].",
-    "The method depends on the frontier for numeral values, units, scale type and pointer semantics; misreads of decimals, multiple overlaid scales or unusual units propagate, and the published frontier baselines are 2025 numbers until Astra is measured in the pilot.",
-    "Hand-set score weights and thresholds are fixed on a 200-dial pilot; they may not transfer to instrument families absent from MeasureBench and TickTockVQA."
+    "The semantics/geometry split is anticipated by [2604.22829] and each module has a close ancestor (MeterFL unwrap and interpolation, Reitsma numeral anchoring, FoundPose render-and-compare, the 720-state clock space of It's About Time); the contribution is the measured instantiation, the frontier-independent margin and the transfer tests, and the paper stands or falls on its numbers.",
+    "Training-free geometry is exactly where earlier pipelines collapsed in the wild (Reitsma 8.5% on MeasureBench, Sobel+Hough clocks below 10%) [2510.26865][2111.09162]; coverage, not accuracy, may cap the gain, which is why the day-1-3 pilot is a go/no-go and the MeterFL-trained segmenter is the pre-committed fallback.",
+    "Scope is instruments with a visible tick lattice: dials, clocks and single-scale linear instruments; vernier calipers, composite and digital instruments are routed to the frontier, and illustrated or tick-free clocks will mostly abstain.",
+    "The method depends on the frontier for numeral values, units, scale type and indicator roles; misreads of decimals, overlaid scales or unusual units propagate, and only one frontier model (plus a local Qwen3-VL-4B variant) is tested.",
+    "Some evidence rests on data that may not be available in time: InSituMeasure is not public as of 2026-10-18 [2609.04014], It's About Time weights may need retraining [2111.09162], and MeterFL shares image sources with MeasureBench [2609.31998]; MeasureBench may also be in Astra's training data, which biases comparisons against the method."
   ]
 }
