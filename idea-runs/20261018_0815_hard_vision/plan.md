@@ -2,10 +2,13 @@
 
 **Goal**: ONE focused, sharp, well-grounded methodological intuition for this problem that a simulated CVPR 2027 panel rates at ≥ 5/10 acceptance odds, executable within the Constraints in problem.md.
 
-**Active direction**: (none yet)
-**Status**: `forming`
+**Active direction**: Axis `perceptual blind spots of frontier VLMs that more reasoning does not fix`, Gap 1 — black-box remedies only change what the frontier model receives, while the quantity is still read out by its own encoder-to-language pathway; the readouts that recover it are per-task probes or heads, so no question-conditioned, task-general readout of a small frozen encoder exists that can be handed to a black-box frontier model as answer-bearing evidence.
+**Status**: `drilling`
 
 ## Candidate axes
+- A1 `perceptual blind spots of frontier VLMs that more reasoning does not fix` — done: 2 gaps (no task-general frozen-encoder readout usable as evidence; no training signal on instances every model is blind to)
+- A2 `deciding when a VLM should trust a visual tool or specialist model over its own reading` — done: 2 gaps (trust arbiter is the blind VLM itself; reliability estimated per type, not per instance)
 
 ## History
 - `forming` at turn 0: added after the user widened the scope beyond embodied; spawning gap_finders on two axes.
+- `drilling` at turn 1: chose A1/Gap 1 — a new capability (general measurement readout as evidence) rather than a routing tweak; A2 gaps become the 'how the frontier model uses it' half. Spawning innovator → C1.
