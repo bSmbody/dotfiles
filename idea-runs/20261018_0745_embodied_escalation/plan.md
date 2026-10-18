@@ -3,7 +3,7 @@
 **Goal**: ONE focused, sharp, well-grounded methodological intuition for this problem that a simulated CVPR 2027 panel rates at ≥ 5/10 acceptance odds, executable within the Constraints in problem.md.
 
 **Active direction**: Axis `failure prediction signals for cheap VLA policies (when to ask for help)`, Gap 1 — triggers regress the cheap policy's failure probability, but the call decision needs the helper's advantage, which collapses past the recoverability horizon while failure probability stays high.
-**Status**: `drilling`
+**Status**: `under_review`
 
 ## Candidate axes
 - A1 `failure prediction signals for cheap VLA policies (when to ask for help)` — done: 2 gaps (failure probability ≠ helper advantage; helper-conditioned labels too expensive under a per-call budget)
@@ -14,3 +14,4 @@
 - `drilling` at turn 1: chose A1/Gap 1 (call when it helps, not when it fails); A1/Gap 2 (sparse helper labels) and A2/Gap 2 (call-type-dependent gain) are the natural method constraints and are visible to the innovator in gaps.md. Spawning innovator → C1.
 - `under_review` at turn 2: innovator wrote C1 (new) — X-learner uplift trigger: free cheap-VLA rollouts give the no-call value per state, a few hundred randomized frontier calls give called outcomes, the trigger learns each call's imputed effect and fires only on savable states. Spawning reviewer on C1.
 - `drilling` at turn 3: reviewer → C1 `revise(focus=novelty)`: helper-conditioned triggers exist (Ask4Help 2211.09960, When2Ask 2306.03604, UniIntervene++ 2610.03620) and causal partial-feedback routing exists (2505.16037); with a simulator-exact control arm the X-learner reduces to baseline-subtracted advantage regression on few informative labels. Delta to build: label efficiency under billed calls — stack a free surrogate helper uplift (local π0.5 / scripted recover branches) as prior and spend billed calls on the frontier-minus-surrogate residual; commit to frontier calls needed to match a risk-thresholded trigger. Revise cycle 1 → C2.
+- `under_review` at turn 4: innovator wrote C2 (improves C1): free stand-in helpers (privileged oracle subgoal, local open VLM, scripted recovery) branched from simulator checkpoints learn a dense surrogate uplift; a small randomized set of billed frontier calls paired with same-seed stand-in branches fits only the frontier-minus-surrogate correction (experimental grounding [1810.11646], multifidelity control variates [2206.05165]). Committed: ≥4× fewer billed training calls than C1; ≤50% of AEGIS-style trigger total calls at matched success; ≥60% of always-call gain at ≤10% of its calls. Spawning reviewer on C2.
