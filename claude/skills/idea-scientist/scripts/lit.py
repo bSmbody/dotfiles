@@ -43,7 +43,9 @@ API = "https://export.arxiv.org/api/query"
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 UA = "idea-scientist-lit/1.0 (research ideation; polite, rate-limited)"
-API_GAP = 3.1  # 秒，arXiv API 的礼貌间隔
+API_GAP = 4.0  # 秒，arXiv API 的礼貌间隔（官方要求 ≥3 秒；多个 agent 并行时 3.1 秒仍会被 429）
+API_COOLDOWN = 600  # 秒，API 一次 429 之后所有进程改走网页的时长
+PAGE_GAP = 1.0  # 秒，arxiv.org 正文页 / PDF 之间的间隔，它们和 API 共用同一个 IP 配额
 
 ID_RE = re.compile(r"^(\d{4}\.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?/\d{7})(v\d+)?$")
 
@@ -60,17 +62,17 @@ def norm_id(raw: str) -> str:
 
 # ---------------------------------------------------------------- 网络
 
-def _throttle() -> None:
-    """全局排队：所有进程共用一个时间戳文件，保证两次 API 请求至少间隔 API_GAP 秒。"""
+def _throttle(name: str, gap: float) -> None:
+    """全局排队：所有进程共用一个时间戳文件，保证同一类请求之间至少间隔 gap 秒。"""
     CACHE.mkdir(parents=True, exist_ok=True)
-    with open(CACHE / "arxiv_api.lock", "a+") as f:
+    with open(CACHE / f"{name}.lock", "a+") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
         try:
             last = float(f.read().strip() or 0)
         except ValueError:
             last = 0.0
-        wait = last + API_GAP - time.time()
+        wait = last + gap - time.time()
         if wait > 0:
             time.sleep(wait)
         f.seek(0)
@@ -78,20 +80,35 @@ def _throttle() -> None:
         f.write(str(time.time()))
 
 
-def fetch(url: str, *, api: bool = False, timeout: int = 60, tries: int = 4) -> bytes:
+def fetch(url: str, *, api: bool = False, timeout: int = 60, tries: int | None = None) -> bytes:
+    tries = tries or (6 if api else 4)
+    on_arxiv = "arxiv.org" in urllib.parse.urlsplit(url).netloc
+    cooldown = CACHE / "arxiv_api.cooldown"
     for attempt in range(tries):
         if api:
-            _throttle()
+            # 最近被 429 过：所有进程都先别碰 API，直接让调用方走网页
+            try:
+                if float(cooldown.read_text()) > time.time():
+                    raise RuntimeError("arXiv API 冷却中")
+            except (OSError, ValueError):
+                pass
+            _throttle("arxiv_api", API_GAP)
+        elif on_arxiv:
+            _throttle("arxiv_page", PAGE_GAP)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
-            if e.code == 404:
+            if api and e.code == 429:
+                cooldown.write_text(str(time.time() + API_COOLDOWN))
                 raise
-            if attempt == tries - 1:
+            if e.code == 404 or attempt == tries - 1:
                 raise
-            time.sleep(5 * (attempt + 1))  # 429 / 503：退避后重试
+            # 429 / 503 是限流：照 Retry-After 等，没有就按 15、30、45… 秒退避
+            retry_after = e.headers.get("Retry-After", "") if e.headers else ""
+            delay = int(retry_after) if retry_after.isdigit() else 15 * (attempt + 1)
+            time.sleep(min(delay, 120))
         except (urllib.error.URLError, TimeoutError, ConnectionError):
             if attempt == tries - 1:
                 raise
@@ -135,18 +152,85 @@ def _to_search_query(q: str, cat: str | None) -> str:
     return expr
 
 
+# ---------------------------------------------------------------- 网页降级
+# API 对同一 IP 限流（429）时，arxiv.org 的网页搜索和摘要页通常仍可用，结果字段与 API 对齐。
+
+_MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july",
+                                         "august", "september", "october", "november", "december"], 1)}
+
+
+def _strip_tags(s: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", s))).strip()
+
+
+def _web_search(q: str, n: int, sort: str, cat: str | None) -> list[dict]:
+    size = next(s for s in (25, 50, 100, 200) if s >= min(n, 200))
+    params = {"query": q, "searchtype": "all", "abstracts": "show", "size": size,
+              "order": "-announced_date_first" if sort == "date" else ""}
+    page = fetch(f"https://arxiv.org/search/?{urllib.parse.urlencode(params)}").decode("utf-8", "replace")
+    out = []
+    for li in page.split('<li class="arxiv-result">')[1:]:
+        m = re.search(r"arxiv\.org/abs/([^\"<\s]+)", li)
+        t = re.search(r'<p class="title is-5 mathjax">(.*?)</p>', li, flags=re.S)
+        if not (m and t):
+            continue
+        cats = re.findall(r'data-tooltip="[^"]*">([a-z\-]+\.[A-Za-z\-]+)</span>', li)
+        d = re.search(r"Submitted</span>\s*(\d{1,2}) (\w+), (\d{4})", li)
+        date = f"{d.group(3)}-{_MONTHS.get(d.group(2).lower(), 1):02d}-{int(d.group(1)):02d}" if d else ""
+        ab = re.search(r'<span class="abstract-full[^"]*"[^>]*>(.*?)</p>', li, flags=re.S)
+        cm = re.search(r'<p class="comments is-size-7">(.*?)</p>', li, flags=re.S)
+        out.append({
+            "id": norm_id(m.group(1)), "title": _strip_tags(t.group(1)), "published": date, "updated": date,
+            "authors": [], "categories": cats,
+            "comment": re.sub(r"^Comments:\s*", "", _strip_tags(cm.group(1))) if cm else "",
+            "abstract": re.sub(r"\s*△ Less\s*$", "", _strip_tags(ab.group(1))) if ab else "",  # noqa: E501
+        })
+    if cat:
+        out = [h for h in out if cat in h["categories"]]
+    return out[:n]
+
+
+def _web_biblio(pid: str) -> dict:
+    page = fetch(f"https://arxiv.org/abs/{pid}").decode("utf-8", "replace")
+    meta = lambda k: [html.unescape(v) for v in re.findall(rf'<meta name="citation_{k}" content="([^"]*)"', page)]
+    cm = re.search(r'<td class="tablecell comments[^"]*">(.*?)</td>', page, flags=re.S)
+    subj = re.search(r'<td class="tablecell subjects">(.*?)</td>', page, flags=re.S)
+    first = (meta("date") or [""])[0].replace("/", "-")
+    return {
+        "id": pid, "title": (meta("title") or [""])[0], "published": first,
+        "updated": (meta("online_date") or [first])[0].replace("/", "-"),
+        "authors": meta("author"),
+        "categories": re.findall(r"\(([a-z\-]+\.[A-Za-z\-]+)\)", subj.group(1)) if subj else [],
+        "comment": _strip_tags(cm.group(1)) if cm else "",
+        "abstract": re.sub(r"\s+", " ", (meta("abstract") or [""])[0]).strip(),
+    }
+
+
+def _api_or_web(api_call, web_call):
+    """先走 API（只重试两次）；被限流或失败时改走网页，并在输出里注明。"""
+    try:
+        return api_call()
+    except Exception:  # noqa: BLE001
+        print("（arXiv API 限流或不可用，改用 arxiv.org 网页：搜索结果基本按日期排序，"
+              "适合查新；找经典论文请稍后重试或换更具体的短语）")
+        return web_call()
+
+
 def cmd_search(a: argparse.Namespace) -> None:
     seen: dict[str, dict] = {}
     for q in a.queries:
+        n = a.k * (5 if a.since else 1)
         params = {
             "search_query": _to_search_query(q, a.cat),
             "start": 0,
-            "max_results": a.k * (5 if a.since else 1),
+            "max_results": n,
             "sortBy": "submittedDate" if a.sort == "date" else "relevance",
             "sortOrder": "descending",
         }
         try:
-            hits = _parse_feed(fetch(f"{API}?{urllib.parse.urlencode(params)}", api=True))
+            hits = _api_or_web(
+                lambda: _parse_feed(fetch(f"{API}?{urllib.parse.urlencode(params)}", api=True, tries=2)),
+                lambda: _web_search(q, n, a.sort, a.cat))
         except Exception as e:  # noqa: BLE001 — 单条 query 失败不影响其余
             print(f"## query: {q}\n  (检索失败: {e})\n")
             continue
@@ -166,7 +250,9 @@ def cmd_search(a: argparse.Namespace) -> None:
 def cmd_biblio(a: argparse.Namespace) -> None:
     ids = [norm_id(i) for i in a.ids]
     params = {"id_list": ",".join(ids), "max_results": len(ids)}
-    for h in _parse_feed(fetch(f"{API}?{urllib.parse.urlencode(params)}", api=True)):
+    for h in _api_or_web(
+            lambda: _parse_feed(fetch(f"{API}?{urllib.parse.urlencode(params)}", api=True, tries=2)),
+            lambda: [_web_biblio(i) for i in ids]):
         print(f"[{h['id']}] {h['title']}")
         print(f"  published {h['published']} (updated {h['updated']}); "
               f"{', '.join(h['categories'][:4])}")

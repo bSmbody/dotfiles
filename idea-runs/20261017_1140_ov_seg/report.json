@@ -1,0 +1,343 @@
+{
+  "title": "Remove the Found, Ask Again: Residual Presence Tests Tell a Frozen Segmenter Where to Zoom",
+  "topic_relevance": {
+    "sub_topic": [
+      "training-free open-vocabulary semantic segmentation",
+      "open-vocabulary segmentation with frozen SAM 3",
+      "adaptive zoom and selective multi-scale inference",
+      "small-object and thin-structure segmentation"
+    ],
+    "primary_focus": [
+      "recovering wholly missed small or thin instances (poles, traffic signs, traffic lights, distant people) without training",
+      "deciding where, and for which classes, a frozen model should be re-queried at higher zoom",
+      "fusing views at several zoom levels without relabelling stuff or large objects",
+      "accuracy at matched inference compute against uniform tiling and presence-ranked search"
+    ]
+  },
+  "one_sentence_thesis": "Hiding what a segmentation map already labels, then asking a frozen model whether the class is still visible, shows where to zoom to find missed small objects.",
+  "core_problem": {
+    "problem_statement": "Training-free open-vocabulary segmenters, including the strongest frozen-SAM 3 pipelines, label every pixel from one fixed-size view (SAM 3 resizes any image to a 1008x1008 square), and every later stage only redistributes that view's evidence, so a thin or small instance that wins no evidence is never looked at again [2511.16719][2606.16996][2512.08730][2503.19777]. The obvious remedy, zooming where the model says a class is present, does not work: presence on an unedited crop also fires for instances the map already labels, so it cannot tell a crop whose poles are all found from one that still hides a missed pole [2411.16044][2606.16996].",
+    "why_it_matters": [
+      "Thin, recurring street structures (poles, traffic signs, traffic lights, distant pedestrians) matter for driving and robotics, and they are what gets absorbed into road or building. Patch quantisation alone caps Cityscapes at 73.6 mIoU in LPOSS's ground-truth oracle [2503.19777].",
+      "The training-free state of the art now runs on frozen SAM 3. ActiveSAM reaches 66.0 mean mIoU on eight benchmarks and 73.0 on Cityscapes, against 33.9-59.0 on Cityscapes for the CLIP-based rows of the same table [2606.16996]. Yet these pipelines run one squeezed pass. ActiveSAM concedes that prompt filtering 'can also omit small or occluded objects' [2606.16996], and SegEarth-OV3 says SAM 3's semantic head 'blurs the boundaries of small targets or misses them entirely' [2512.08730].",
+      "Every training-free refiner redistributes evidence conditioned on the first argmax. LPOSS+ keeps a fidelity term to it and gains +0.8 mIoU against +1.8 Boundary IoU [2503.19777]. PixelUp outputs convex combinations of neighbouring low-resolution features [2608.02792]. PEARL trusts low-peak nodes least [2603.21528]. Trident prompts SAM only from argmax components [2411.09219], and ProC-SAM3 re-aggregates the prompt responses of the same pass [2606.21863]. A class that wins nothing has nothing to refine.",
+      "Uniform remedies are costly or harmful. Larger inputs cost window context: ProxyCLIP's VOC20 score falls from 79.7 to 73.4 between 336 and 576 px [2411.09219]. Independent tiles lose context, and their cost grows with the tile count (SAM3Count as described in [2607.02139]). Extra crops add false positives: ViCrop-Det's mAP50 falls from 38.9 at K = 5 to 34.1 at K = 7 [2604.26806]. Gating slices to where a coarse detector already found objects loses accuracy, because 'missed regions at the proposal stage cannot be recovered' [2608.23923].",
+      "The research gap: erase-and-re-ask (hide the instances found so far, then look for more) exists only with a retrained second look, in Adversarial Erasing [1703.08448] and PS-RCNN [2003.07080]. No training-free method tests a frozen open-vocabulary recogniser on crops with the already-labelled segments removed, and no zoom criterion separates 'present' from 'present but unlabelled' [2411.16044][2606.16996][2512.08730]."
+    ],
+    "concrete_example": "Input: a 2048x1024 Cityscapes frame with the Cityscapes class list (pole, traffic sign, traffic light, person, road, building, ...). ActiveSAM resizes it to 1008x1008, roughly halving its horizontal resolution [2606.16996]. Suppose its map labels the two nearest poles and one sign, while three distant poles and a small sign mounted on a labelled pole are absorbed into building and vegetation; this is an illustrative case of the failure in the problem statement. Asking SAM 3 'is there a pole?' on any tile returns yes because the labelled poles are visible, so a ZoomEye-style presence-ranked search has to open every node down to depth 2 [2411.16044]. LPOSS+ or PixelUp cannot create pole pixels where no pole evidence won [2503.19777][2608.02792], and Trident-style SAM prompting never prompts the missed poles [2411.09219]. The desired output is the same map plus segments for the three distant poles and the mounted sign, with road, building and sky untouched, at a cost well below uniform tiling."
+  },
+  "key_novelty": {
+    "main_idea": "Residual pooled tests for zoom: hide each class's found segments, re-ask the frozen model's presence, and zoom only where it still says yes",
+    "explanation": [
+      "Group testing removes a found defective before re-testing a pool. Likewise, we hide the segments the map already gives a class, so the frozen model's 'yes' means an unlabelled instance remains.",
+      "Only crops that still answer yes are split and zoomed, and each child is asked only about the classes its parent flagged, so search effort follows missed instances rather than image area.",
+      "Zoomed views may only add the flagged class, and only on small segments they fully contain. Road, sky and large objects keep their wide-context label, so zooming cannot relabel what context decided."
+    ]
+  },
+  "problem_definition": {
+    "formal_setting": "Let image I live on a pixel grid Ω of any aspect ratio, with vocabulary C. A frozen base pipeline B (ActiveSAM on frozen SAM 3) returns a label map Y0: Ω -> C ∪ {bg}, per-class score maps S_c, instance masks and an admitted class set A(I) ⊆ C. For class c, the found set F_c = {p : Y(p) = c} under the current map Y is split into segments. Let G_c be the ground-truth connected components of class c. A component g is missed if |g ∩ F_c| < |g|/2. A view V (a square box b_V, resized to the model's 1008 px input) is one pooled measurement. The residual test is T_c(V) = 1[ q_c(V ; tokens in D_m(F_c ∩ b_V) masked) >= τ ], where q_c is SAM 3's presence probability for c and D_m is dilation by m view tokens. Ideally T_c(V) = 1 iff some missed g lies inside V's core and inside V's valid size range. Task: under a per-image budget of B view passes, adaptively choose views (a quadtree over aspect-preserving root tiles, depth <= D) and certified writes W = {(segment s, class c)} so as to maximise the number of recovered missed components, subject to Y(p) = Y0(p) for every p outside the written segments. The final map is Y0 overwritten by W in coarse-to-fine order of authority.",
+    "inputs": "An RGB image of any aspect ratio; a list of class names; frozen SAM 3 weights (frozen CLIP and DINO for the secondary instantiation); the base pipeline's label map, class score maps, instance masks and admitted class set; a per-image view budget B and a depth cap D.",
+    "outputs": "A per-pixel label map that equals the base map except for certified added segments of flagged classes, plus a per-image log of the tested (view, class) pairs, residual presence scores and writes, used for compute accounting and recovery analysis."
+  },
+  "key_terms": {
+    "Residual presence test": "Asking the frozen model whether a class is in a crop after hiding every segment the current map already gives that class; a 'yes' should mean at least one unlabelled instance is left.",
+    "Found set (declared defective)": "The pixels and segments the current label map assigns to a class, from the base pass or from earlier zoomed views.",
+    "Missed instance (defective)": "A ground-truth connected component of a class of which less than half is labelled with that class in the current map.",
+    "View (pool)": "A square crop of the image, resized to the model's input size and encoded once; one view measures all tested classes at the same time.",
+    "Presence head": "SAM 3's learned global token that predicts whether a noun phrase is present anywhere in its input, kept separate from localisation [2511.16719].",
+    "Flagged class": "A class whose residual test is positive in a view; only flagged classes are tested in that view's children, and only they may be written there.",
+    "Valid view": "A view has authority over a segment only if the segment is resolved (enough tokens across its narrow side), small relative to the view, and inside the view with a margin.",
+    "Recovery rate": "The fraction of ground-truth components missed by the base map that are correctly labelled (at least half their pixels) in the final map.",
+    "Context answering": "The failure in which a model still reports a class after its evidence has been hidden, because the surrounding context suggests it [1703.08448].",
+    "Dilution": "A weak positive is harder to detect in a larger pool; in pooled testing the false-negative rate grows with pool size [2008.06642].",
+    "Aspect-preserving root tiles": "Overlapping squares of side min(H, W) that cover a non-square image, so the model is never fed a squeezed frame."
+  },
+  "related_work": [
+    {
+      "sub_area": "Training-free CLIP-based OVSS and its refiners",
+      "what_it_does": "The dense class evidence comes from one CLIP pass per window, and later stages redistribute it. LPOSS+ runs label propagation over patches and then pixels, with a fidelity term to the initial prediction; it gains +0.8 mIoU against +1.8 Boundary IoU, and its oracle caps Cityscapes at 73.6 mIoU [2503.19777]. PixelUp's upsampled feature is a softmax-weighted average of neighbouring low-resolution features [2608.02792]. PEARL solves a confidence-weighted Laplacian on a grid whose best size differs per dataset [2603.21528]. Trident aggregates spliced CLIP and DINO features with a SAM affinity, then prompts SAM from connected components of the argmax [2411.09219]. ProxyCLIP averages CLIP values with DINO affinities [2408.04883], and OV-Stitcher majority-votes raw labels inside SAM2 masks [2604.08110]. FreeCP is the only method that re-encodes a crop: one 112x112 crop per group of overlapping classes that survived an image-level redundancy test, assigned a single label [2508.00557].",
+      "open_gap": "Each method only moves the boundaries of classes that already won some evidence, and none of them re-acquires evidence where a class won nothing. FreeCP's single crop is gated at image level and labels the crop as a whole, and the authors say this test 'often misidentifies small or less prominent object classes as redundant' [2508.00557].",
+      "citations": ["2503.19777", "2608.02792", "2603.21528", "2411.09219", "2408.04883", "2604.08110", "2508.00557"]
+    },
+    {
+      "sub_area": "Open-vocabulary semantic segmentation with frozen SAM 3",
+      "what_it_does": "SAM 3 decouples recognition from localisation. A presence token in its DETR decoder predicts whether a noun phrase is present in the input, and its score multiplies every query's score and gates the semantic head. Inputs are always resized to a fixed square, usually 1008x1008, regardless of aspect ratio [2511.16719]. SegEarth-OV3 fuses the instance and semantic outputs by a pixelwise maximum, and on very large images uses per-window presence only to suppress categories [2512.08730]. ActiveSAM eliminates classes in two presence stages, a 336 px preview over all prompts and a re-check after the first decoder layer at 1008 px, then decodes only the survivors, and assigns labels with class signatures. It reaches 66.0 mean mIoU with one shared configuration [2606.16996]. ProC-SAM3 takes a pixelwise maximum over presence-gated prompt responses of one 1008 px pass on a single RTX 4090 [2606.21863].",
+      "open_gap": "Every image gets one squeezed pass. Presence is used once per image, or per uniform window, to remove classes, never to decide where to look more closely or what to add. ActiveSAM concedes that small or occluded objects can be omitted [2606.16996].",
+      "citations": ["2511.16719", "2512.08730", "2606.16996", "2606.21863"]
+    },
+    {
+      "sub_area": "Selective zoom, multi-scale inference and crop selection",
+      "what_it_does": "Several training-based methods choose where to look at a finer scale. MagNet magnifies progressively at locations with low top-1 minus top-2 margin, using a trained refinement module [2104.03778]. AutoFocus learns a class-agnostic FocusPixel head from boxes, zooms on chips around it and prunes detections at chip borders [1812.01600]. SNIP keeps only detections within each scale's valid size range [1711.08189]. The training-free methods differ in the selection signal. ViCrop-Det selects at most five crops by decoder attention entropy and merges them by NMS [2604.26806]. ROI-Gated SAHI slices only where a coarse detector already found objects [2608.23923]. ZoomEye ranks quadtree nodes by an MLLM's yes/no confidence that a cue is in the unedited crop, and for all-instance cues visits every node down to depth 2 [2411.16044]. FOCUS crops where one named object scores highest [2506.21710], and digital foveation fixates by class-agnostic saliency, then applies a trained closed-set segmenter [2609.04088]. On frozen SAM 3, AdaCount warps the image toward look-alikes of the instances found so far [2607.02139]. Concurrent theory proves when crop decompositions cannot hurt: no view zooms out, and every item's support lies inside a view. It also proves that adaptive zoom saves cost only if coarse views carry graded evidence about targets smaller than a token [2610.09313].",
+      "open_gap": "Every trigger is either trained, class-agnostic, margin-based, placed where something was already found, or computed on unedited crops. None can tell a crop that holds only labelled instances from one that still hides a missed instance, and none of the training-free ones produces per-pixel output with a rule for which view has authority.",
+      "citations": ["2104.03778", "1812.01600", "1711.08189", "2604.26806", "2608.23923", "2411.16044", "2506.21710", "2609.04088", "2607.02139", "2610.09313"]
+    },
+    {
+      "sub_area": "Erase-and-re-ask and region removal in vision models",
+      "what_it_does": "Adversarial Erasing erases the regions a classifier has mined and retrains a classifier on the erased images to find more of the class: erasing one cow reveals two more. Once most object regions are erased, however, the classifier recognises the class from contextual regions [1703.08448]. PS-RCNN masks found people and lets a secondary R-CNN, trained only on the missed instances, find occluded ones. It warns that imperfect masks cause duplicates, and that weak leftovers need finer resolution [2003.07080]. CaR redraws visual prompts on the whole image and drops queries recurrently; blacking out the context costs CLIP about 5 mIoU against context-preserving prompts [2312.07661]. In ViT classifiers, dropping a region's tokens avoids the missingness bias that pixel fills cause [2204.08945].",
+      "open_gap": "Every erase-and-re-ask method retrains the network that takes the second look. None asks a frozen open-vocabulary recogniser 'is the class still here?' after removing its found segments, or uses the answer to gate zoom. Token dropping has been validated only for global-attention ImageNet classifiers, not for windowed-attention detectors or segmenters such as SAM 3 [2204.08945][2511.16719].",
+      "citations": ["1703.08448", "2003.07080", "2312.07661", "2204.08945"]
+    },
+    {
+      "sub_area": "Adaptive group testing and sparse sensing (source of the mechanism)",
+      "what_it_does": "A group test reports the OR of its items' defectiveness. Hwang's generalized binary splitting halves positive pools until it isolates a defective, then removes that item and re-tests the pool. A re-test is therefore positive iff another unidentified defective remains, and the noisy variants keep the same bookkeeping, using repeated tests to certify defectives [2106.12193]. In pooled PCR, dilution makes sensitivity fall with pool size, and false negatives from weak samples are correlated across pools [2008.06642]. Distilled Sensing re-measures only the components that survive a lenient null test [1001.5311].",
+      "open_gap": "These schemes have not been used to gate re-queries of a frozen dense recogniser. Mapped naively, the test is an OR over all instances, found or not, rather than over the missed ones, so the mapping only holds if found segments are removed from the pool before testing.",
+      "citations": ["2106.12193", "2008.06642", "1001.5311"]
+    }
+  ],
+  "method": {
+    "high_level_flow": [
+      "Base: frozen SAM 3 pipeline (ActiveSAM) -> base label map, class score maps, instance masks and admitted classes -> per-class found segments",
+      "Roots: aspect-preserving root tiles -> one shared backbone pass per tile -> per-class residual presence with that class's found segments masked",
+      "Search: positive (view, class) pairs -> decode, certify and write new segments -> overlapping children tested only for the flagged classes (best-first under a per-image budget, depth cap 2)",
+      "Fusion: coarsest-valid-view authority -> final label map -> optional refiner (LPOSS+)"
+    ],
+    "modules": [
+      {
+        "module": "Base pipeline",
+        "role": "Produces the context-rich base map, which C3 only adds to.",
+        "model": "ActiveSAM [2606.16996] on frozen SAM 3 (Perception Encoder-Large+ vision backbone, about 850M parameters [2511.16719]); SegEarth-OV3 [2512.08730] as the second base.",
+        "inputs": ["image resized to 1008x1008, as in ActiveSAM", "class names with ActiveSAM's prompt expansion"],
+        "outputs": ["base label map Y0", "class score maps S_c", "instance masks with confidence >= 0.3", "admitted class set A(I) from the 336 px presence preview"],
+        "notes": "Run unchanged, with ActiveSAM's shared settings: τ = 0.1, instance confidence 0.3, buckets of 32 prompts, and signatures from unlabeled COCO train images [2606.16996]. C3 reuses A(I), so a class the preview rejects is never tested. After filtering, ActiveSAM still keeps 93.9% of the ground-truth image-class pairs from components smaller than 1,024 px [2606.16996]."
+      },
+      {
+        "module": "Found-set builder and test selector",
+        "role": "Turns the current map into per-class found segments and decides which classes each view tests.",
+        "model": "none (bookkeeping)",
+        "inputs": ["current map Y", "instance masks", "admitted set A(I)", "view box"],
+        "outputs": ["found segments F_c for each class", "tested set T(V) for each view"],
+        "notes": "F_c consists of SAM 3's instance masks of c where they exist, otherwise the connected components of {Y = c}. Root views test T(V) = {c in A(I) : |F_c ∩ V| < φ|V|} with φ = 0.25. Stuff and large objects that fill the view are therefore neither removed nor tested, which keeps the dominant context visible; CaR finds that blacking out context costs CLIP about 5 mIoU [2312.07661]. Child views test only the classes their parent flagged, and the background prompt is never tested."
+      },
+      {
+        "module": "Aspect-preserving root tiler",
+        "role": "Undoes the aspect-ratio squeeze and sets the size of the root pools.",
+        "model": "none",
+        "inputs": ["image of size H x W"],
+        "outputs": ["R overlapping square root views, each resized to 1008 px"],
+        "notes": "The roots are squares of side min(H, W) with a stride of half a side, the last one aligned to the image border. That gives 3 roots for a 2048x1024 Cityscapes frame, 2 for a 4:3 image and 1 for a square image. Without this step, SAM 3 and the SAM 3 OVSS pipelines resize every image to a 1008 square regardless of aspect ratio [2511.16719][2606.16996][2512.08730]. The root size is the dilution-limited pool size, since a larger pool lowers sensitivity to a weak positive [2008.06642]. Uniform tiling over these roots is baseline (i)."
+      },
+      {
+        "module": "Residual presence tester (the pooled test)",
+        "role": "For each (view, class) pair, decides whether an unlabelled instance of the class is still visible.",
+        "model": "SAM 3 Perception Encoder backbone (one unmasked pass per view, prompt-independent), plus the per-prompt fusion encoder and the first decoder layer with its presence token.",
+        "inputs": ["view pixels", "tested set T(V)", "F_c ∩ V for each tested class"],
+        "outputs": ["residual presence q_c_res(V) for each c in T(V)", "flag set P(V) = {c : q_c_res(V) >= τ}"],
+        "notes": "SAM 3 runs its backbone once per frame. The 6-block fusion encoder and the 6-block decoder run per prompt, and presence is read from a decoder token whose only view of the image is the fusion encoder's conditioned embeddings [2511.16719]. To remove class c, C3 masks the image tokens inside the m-token dilation of c's own found segments (m = 1 view token) as attention keys in the fusion encoder's self-attention and the decoder's cross-attention, and zeroes them before the segmentation head. Each prompt in a bucket gets its own mask, so per-class removal adds no pass. Presence is read after the first decoder layer, exactly where ActiveSAM re-checks it [2606.16996]. Only c's own segments are hidden when c is tested, so a sign mounted on a labelled pole stays visible when 'traffic sign' is tested. The pilot compares three alternatives: token dropping inside the backbone, either per class or with one union mask, and pixel fill. Backbone dropping means masking keys in all windowed and global layers. The backbone uses RoPE plus windowed absolute embeddings, so the remaining tokens keep their positions [2511.16719]. Token dropping avoids fill artefacts in global-attention ViT classifiers [2204.08945], but the windowed SAM 3 case is untested."
+      },
+      {
+        "module": "Decoder and certifier",
+        "role": "Turns a positive test into written segments, but only for segments that are new and for which the view is valid.",
+        "model": "SAM 3 full decoder with instance and semantic heads, run only for flagged classes, as ActiveSAM skips decoding for prompts below τ [2606.16996].",
+        "inputs": ["masked conditioned embeddings of each flagged class", "found sets", "view geometry"],
+        "outputs": ["certified segments W(V, c)"],
+        "notes": "Candidate segments are instance masks with residual presence times query score >= 0.3, plus connected components of the presence-gated semantic mask, following ActiveSAM's dual-head fusion [2606.16996]. Re-detection guard: a candidate is dropped if more than ω = 0.5 of its area lies inside the removed area; otherwise only its pixels outside F_c, and outside the found segments of other tested classes, are written. This keeps missed pieces of partly found instances and missed instances that touch found ones, both of which a strict any-overlap guard would discard. The duplicate risk PS-RCNN reports for imperfect masks [2003.07080] matters here only as same-class pixels written next to a found instance of that class. Validity combines SNIP's per-scale valid range [1711.08189], AutoFocus's chip-border pruning [1812.01600] and the containment condition of Thm 4 in [2610.09313]. A segment qualifies if its narrow side spans at least r_min = 2 view tokens, its area is at most a_max = 0.25 of the view, and its box plus a margin of half its size lies inside the view (image borders excepted)."
+      },
+      {
+        "module": "Residual quadtree search",
+        "role": "Spends the per-image budget only where flagged classes remain unexplained.",
+        "model": "none (search controller)",
+        "inputs": ["positive (view, class) pairs", "updated map and found sets", "budget B", "depth cap D"],
+        "outputs": ["ordered log of tested views", "flags", "writes"],
+        "notes": "A view with a non-empty flag set spawns four overlapping children, each 0.6 of the parent's side with a stride of 0.4. Any target up to 0.2 of the parent's side then lies wholly inside one child, and each child is encoded at about 1.67x the parent's zoom. Children are tested only for their parent's flags, against found sets that include every write so far. This is Hwang's 'declare the found item, remove it and re-test' applied at the next level [2106.12193]. Children go into a priority queue keyed by the parent's residual presence and are popped until B view passes are spent. Negative children retire, and so do all their locations. With depth cap D = 2, the worst case equals uniform tiling at the depth cap, which is baseline (ii). The search is anytime: one logged run gives the map at every smaller budget."
+      },
+      {
+        "module": "Authority fusion",
+        "role": "Assembles the final map so that zoom can add segments but never relabels a region because a crop lacked context.",
+        "model": "none",
+        "inputs": ["base map Y0", "all certified writes with the depth of the view that made them"],
+        "outputs": ["final label map Y"],
+        "notes": "Writes are applied coarse to fine. A pixel already written by a coarser view keeps that write, and at equal depth the higher S_c wins. The base map keeps authority over every segment for which it is the coarsest valid view. Road, sky, wall and the interiors of large objects are thus never relabelled from a context-poor crop, which is the failure that plain zoom causes: ProxyCLIP loses accuracy at higher input resolution [2411.09219], and crops suffer part-whole ambiguity [2408.04961]. Stated plainly, C3 only adds pixels of flagged classes outside their found sets: wholly missed instances and missed pieces of partly found ones. It does not move boundaries between labelled classes. That job stays with the base pipeline or a later refiner such as LPOSS+ [2503.19777]."
+      },
+      {
+        "module": "Optional refiner",
+        "role": "Shows that C3 composes with refiners that redistribute evidence.",
+        "model": "LPOSS+ pixel-level label propagation [2503.19777]",
+        "inputs": ["final map and class score maps after C3"],
+        "outputs": ["refined label map"],
+        "notes": "Run after C3, so that propagation can act on evidence that now exists. It is used only in the composition ablation and is not part of the default configuration."
+      },
+      {
+        "module": "CLIP instantiation (secondary)",
+        "role": "Tests whether the mechanism depends on SAM 3.",
+        "model": "Frozen OpenAI CLIP ViT-B/16 with ProxyCLIP's DINO proxy attention [2408.04883]",
+        "inputs": ["view pixels", "found sets from the ProxyCLIP base map"],
+        "outputs": ["residual crop scores", "dense crop maps", "certified writes"],
+        "notes": "The test is CLIP's global image-text score of the crop for c, with c's found tokens dropped from the global-attention ViT. That is the setting in which token dropping was shown to avoid missingness bias [2204.08945]. The null for c is a high quantile of c's score on the same image's root crops where the base map gives c no pixel. The dense decode is ProxyCLIP's map of the crop, with the same guard, validity rule and fusion. This instantiation is run on Cityscapes and ADE20K only."
+      }
+    ],
+    "novel_architectural_elements": [
+      "A per-class removal mask inserted between a shared, prompt-independent backbone pass and the prompt-conditioned fusion encoder and decoder, so that one view pass yields a residual presence test for every tested class.",
+      "A class-specific quadtree in which each child view inherits only its parent's flagged classes and the updated found sets, and is expanded best-first by residual presence under a per-image view budget.",
+      "A write-only, authority-gated fusion stage between the base pipeline and any refiner. Zoomed views may only add flagged classes on certified segments outside the found sets, never overwrite other tested classes' found segments, and the coarsest valid view keeps authority.",
+      "Aspect-preserving overlapping root tiles as the roots of the pools, in place of the single squeezed square input.",
+      "A plug-in wrapper around an unchanged base pipeline (ActiveSAM, SegEarth-OV3 or a CLIP method), whose map is read and never recomputed."
+    ],
+    "pseudocode": "def residual_zoom(image, vocab, base, B, D=2, tau=0.1, phi=0.25, m=1, omega=0.5):\n    Y, S, inst, A = base(image, vocab)          # ActiveSAM: map, scores, instance masks, admitted classes\n    found = build_found_sets(Y, inst)           # per class: segments already labelled\n    queue = PriorityQueue()\n    for V in aspect_preserving_roots(image):    # squares of side min(H, W), stride 1/2 side\n        T = [c for c in A if area(found[c] & V) < phi * area(V)]\n        queue.push(view=V, tested=T, depth=0, prio=INF)\n    passes = 0\n    while queue and passes < B:\n        V, T, d = queue.pop()\n        feats = sam3_backbone(resize(crop(image, V), 1008)); passes += 1   # shared, unmasked\n        flags = {}\n        for c in T:                              # prompts bucketed, 32 per decoder pass\n            M = dilate(found[c] & V, tokens=m)   # hide only c's own found segments\n            q = presence_after_layer1(feats, prompt[c], key_mask=M)        # residual pooled test\n            if q < tau:\n                continue                         # negative: c retires in V and its sub-views\n            flags[c] = q\n            for s in decode_segments(feats, prompt[c], key_mask=M, conf=0.3):\n                if area(s & M) > omega * area(s):\n                    continue                     # re-detection of a found instance or of the hole\n                if not valid(s, V, r_min=2, a_max=0.25, margin=0.5):\n                    continue                     # view not authoritative for s\n                s = s - found[c] - union(found[k] for k in T if k != c)\n                write(Y, s, c, depth=d)          # a coarser write keeps authority\n                found[c] = found[c] | s\n        if flags and d < D:\n            for child in overlapping_quadrants(V, side=0.6, stride=0.4):\n                queue.push(view=child, tested=list(flags), depth=d + 1, prio=max(flags.values()))\n    return Y                                     # optionally refine with LPOSS+ afterwards",
+    "design_choices": [
+      "Per-class removal instead of one shared union mask: when c is tested, only c's own found segments are hidden. A sign on a found pole, a light on its mast or a rider beside a found bicycle therefore stays visible, which answers the review's objection to C3's shared mask. Per-prompt attention masks inside ActiveSAM's prompt buckets make this free [2606.16996].",
+      "Removal after the shared backbone by default, rather than token dropping inside it. SAM 3's backbone is prompt-independent and its presence token sees the image only through the per-prompt conditioned embeddings [2511.16719], so masking there costs nothing extra. Backbone-level dropping, which may leak less, costs one backbone pass per class. The pilot picks the cheapest variant whose residual AUROC is within 0.02 of the best, a decision rule fixed in advance.",
+      "The lenient, shared τ = 0.1 and instance confidence 0.3 are taken from ActiveSAM without retuning [2606.16996]. False negatives are the costly error under dilution, and weak positives are missed in every pool [2008.06642], whereas a false positive costs only one more view because certification decides what is written.",
+      "Only minority classes are tested (found area < φ = 0.25 of the view). Large classes and stuff are never removed, so the scene context that recognition needs stays in view; the one prompt in CaR that deletes context costs about 5 mIoU [2312.07661].",
+      "The re-detection guard uses an overlap fraction ω instead of dropping any segment that touches the removed area. Missed pieces of partly found instances and adjacent missed instances survive, and a decoded 'hole' is still discarded. PS-RCNN's duplicate warning for imperfect masks [2003.07080] matters less for semantic labels, because a duplicate only writes the same class next to its found instance.",
+      "Aspect-preserving roots are used instead of one squeezed square, because SAM 3 pipelines halve a Cityscapes frame's horizontal resolution [2511.16719][2606.16996]. Baseline (i) isolates how much of the gain comes from this alone.",
+      "Children inherit only their parent's flags, use the updated found sets, and are expanded best-first by residual presence up to depth 2. The tested set shrinks with depth, the worst case is bounded by uniform tiling at the depth cap, and the search is anytime, so one run gives the full recovery-versus-budget curve.",
+      "Fusion follows 'the coarsest valid view decides': SNIP's valid range [1711.08189], AutoFocus's border pruning [1812.01600] and the containment condition of [2610.09313]. This replaces 'the finest look wins', which would relabel stuff from a context-poor crop [2411.09219][2408.04961].",
+      "The claim is accuracy at matched compute, not group-testing efficiency. One view measures every tested class, so a view retires only when all its tested classes are negative, and the k·log2(n/k) rate does not carry over to dense scenes. Cityscapes, for example, admits 18 of 23 prompts per image [2606.16996].",
+      "Every hyperparameter is fixed in advance and shared across the eight benchmarks, following ActiveSAM's single-configuration protocol [2606.16996]. Sensitivity is reported, but no value is tuned on evaluation labels."
+    ],
+    "theoretical_grounding": "(1) The group-testing mapping. A pooled test reports the OR of its items' defectiveness. Hwang's generalized binary splitting removes each found defective before re-testing, so a re-test is positive iff another unidentified defective remains [2106.12193]. In C3, items are locations, defectives are 'class c present but unlabelled', declared defectives are found segments, and the residual test is an OR over the missed instances inside a view. Unmasked presence, an OR over all instances, does not have this property. With an ideal residual test, the views visited for class c are the R roots plus at most 4 children per level along the paths to its k_c missed instances. That is at most R + 4·D·Σ_c k_c tested views, against R·(1 + 4 + ... + 4^D) for uniform tiling at the same depth. This is a best case, because one view is shared by all tested classes, so the paper claims accuracy at matched compute rather than the k·log2(n/k) rate. (2) Dilution and correlated misses. Pooled sensitivity falls with pool size, and false negatives from weak samples repeat across pools [2008.06642]. C3 therefore uses a lenient τ and small roots, and reports the recovery rate, which separates a sampling bottleneck (fixable by zoom) from a recognition bottleneck (missed at every zoom). (3) When zooming is safe. Under monotonicity assumptions, if no view zooms out and every item's needed support lies inside some view, a crop decomposition has at least the whole image's expected number of correct answers (Thm 1 and Thm 4 of [2610.09313]). C3's overlap geometry and validity rule restrict writes to segments that meet this containment, and everything else keeps the base label. Adaptive zoom can beat uniform tiling only if coarse views carry graded evidence about targets smaller than a token (Prop 8-9 of [2610.09313]), and the go/no-go pilot measures this directly for residual presence. (4) Removal without fill artefacts. In ViTs, dropping a region's tokens lets the model keep predicting from the remaining content, whereas pixel fills make predictions follow the mask [2204.08945]. (5) The known failure direction. Once a class's own evidence is removed, a classifier may still answer from context [1703.08448]. In C3 such a false positive costs only views, because certification decides what is written, and the pilot measures how often it happens."
+  },
+  "model_details": {
+    "base_model": "Frozen SAM 3 (official release; Perception Encoder-Large+ vision backbone; about 850M parameters, of which about 450M are the vision encoder, 300M the text encoder and 100M the detector) used inside ActiveSAM and SegEarth-OV3 [2511.16719][2606.16996][2512.08730]. Secondary instantiation: frozen OpenAI CLIP ViT-B/16 with ProxyCLIP's DINO proxy attention [2408.04883].",
+    "training": {
+      "method": "No model training. C3 is a training-free search-and-fusion algorithm at inference time: no weights are updated, no segmentation labels are used, and no hyperparameter is set on evaluation labels.",
+      "objective_functions": [
+        "Purpose: decide whether a view still hides an unlabelled instance of a class. Formally: T_c(V) = 1[ q_c(V | tokens in D_m(F_c ∩ V) masked) >= τ ], with τ = 0.1 and m = 1 view token.",
+        "Purpose: spend a fixed per-image compute budget where missed instances are most likely. Formally: best-first expansion of views by parent residual presence, subject to (number of view passes) <= B and depth <= D = 2; children test only P(parent) = {c : T_c(parent) = 1}.",
+        "Purpose: write only new, well-resolved segments, in views that have authority over them. Formally: write s for c iff T_c(V) = 1, |s ∩ D_m(F_c)| <= ω|s| with ω = 0.5, narrow_side(s) >= 2 view tokens, |s| <= 0.25|V| and box(s) plus half its size lies inside V; then set Y(p) = c for p in s minus (F_c ∪ found segments of the other tested classes), unless p already holds a write from a coarser view.",
+        "Purpose (evaluation only, nothing is optimised): measure what the search recovers. Formally: recovery = |{g in G_small : |g ∩ F_c^base| < |g|/2 and |g ∩ F_c^final| >= |g|/2}| / |{g in G_small : |g ∩ F_c^base| < |g|/2}|."
+      ],
+      "adaptation": "None: all weights stay frozen. The only changes are per-prompt attention key masks, the choice of input views and the write rule.",
+      "key_hyperparameters": {
+        "presence threshold τ": "0.1, shared, taken from ActiveSAM [2606.16996]",
+        "instance confidence": "0.3, taken from ActiveSAM [2606.16996]",
+        "prompt bucket size": "32, taken from ActiveSAM [2606.16996]",
+        "root tiles": "squares of side min(H, W), stride half a side, each resized to 1008 px",
+        "child geometry": "4 children per positive view, side 0.6 of the parent, stride 0.4",
+        "depth cap D": "2",
+        "removal margin m": "1 view token",
+        "minority fraction φ": "0.25 of the view's area",
+        "re-detection guard ω": "0.5",
+        "resolve threshold r_min": "2 view tokens across the segment's narrow side",
+        "maximum write area a_max": "0.25 of the view",
+        "containment margin": "half the segment's box size",
+        "per-image budget B": "swept; matched to each baseline's number of view passes",
+        "tuning protocol": "all values fixed in advance and shared across the eight benchmarks; sensitivity reported, never tuned per dataset"
+      }
+    }
+  },
+  "comparison_to_sota": {
+    "related_methods": [
+      "ActiveSAM [2606.16996]: frozen SAM 3; presence-based class elimination per image at 336 and then 1008 px, followed by exclusive concept decoding; the training-free state of the art.",
+      "SegEarth-OV3 [2512.08730]: frozen SAM 3; pixelwise maximum of the instance and semantic heads; presence filtering per uniform window to suppress classes.",
+      "ZoomEye [2411.16044]: training-free quadtree search for MLLMs that ranks nodes by yes/no presence confidence on unedited crops.",
+      "AdaCount [2607.02139]: counting with frozen SAM 3; warps the image toward look-alikes of the instances found so far, for one second pass per concept.",
+      "ViCrop-Det [2604.26806]: training-free, single-stage crop selection by decoder attention entropy for closed-set detectors, with NMS fusion.",
+      "ROI-Gated SAHI [2608.23923]: slices only where a coarse detector already found objects.",
+      "MagNet [2104.03778]: trained progressive magnification at locations with a low top-1 minus top-2 margin.",
+      "AutoFocus [1812.01600]: a supervised, class-agnostic FocusPixel head picks the chips to process at the next scale.",
+      "FreeCP [2508.00557]: re-encodes one 112x112 crop per CLIP ambiguity group and gives it a single label.",
+      "Adversarial Erasing [1703.08448] and PS-RCNN [2003.07080]: erase found regions or instances, then look again with a retrained network.",
+      "CaR [2312.07661]: recurrent elimination of CLIP queries with visual prompts drawn on the whole image.",
+      "LPOSS+ [2503.19777], PixelUp [2608.02792], PEARL [2603.21528] and Trident [2411.09219]: redistribute the class evidence of one pass."
+    ],
+    "key_differences": [
+      "vs. ActiveSAM: ActiveSAM uses presence once per image, on the unedited image, to drop classes for speed. C3 keeps ActiveSAM as its base and uses presence per crop, with the class's found segments removed, to decide where to zoom and what a zoomed view may add.",
+      "vs. ZoomEye: C3 borrows ZoomEye's use of crop-level recognition as the zoom criterion. ZoomEye tests unedited crops, so for all-instance cues it visits every node down to depth 2, and it has no per-pixel output or authority rule. C3's contribution is the residual trigger plus per-pixel authority fusion.",
+      "vs. SegEarth-OV3: its per-window presence only removes categories inside uniform windows. C3's per-view presence adds missing segments and gates further zoom.",
+      "vs. AdaCount: AdaCount amplifies found instances, needs one warped pass per concept, and becomes ineffective when nothing was found. C3 removes found instances, shares one view pass across all tested classes, and can recover a class with no found instance as long as the image-level preview admitted it.",
+      "vs. ViCrop-Det and ROI-Gated SAHI: their gates are class-agnostic and point where something is salient or already detected. C3's gate is class-specific and points where something is present but not yet labelled.",
+      "vs. MagNet and AutoFocus: both need training (a refinement module, a FocusPixel head) and choose locations by margin or by class-agnostic smallness. C3 is training-free, and its trigger can fire for a class outside the top two at a location.",
+      "vs. Adversarial Erasing and PS-RCNN: C3 follows the same erase-and-re-ask principle, but those methods retrain the network that takes the second look. C3 asks the same frozen model, and uses the answer to gate zoom rather than to mine training masks.",
+      "vs. FreeCP: FreeCP re-encodes one fixed-size crop per ambiguity group and gives it a single label. C3 recurses, labels densely, and triggers on unexplained presence rather than on overlap among surviving classes.",
+      "vs. LPOSS+, PixelUp, PEARL and Trident refinement: these redistribute existing evidence, whereas C3 re-acquires evidence. C3 runs before them, so they can be stacked on top of it."
+    ]
+  },
+  "proposed_evaluation": {
+    "evaluation_setting": "Training-free open-vocabulary semantic segmentation on the eight standard benchmarks with one shared configuration. C3 runs as a plug-in on frozen SAM 3 pipelines (ActiveSAM as the main base, SegEarth-OV3 as the second) and, on Cityscapes and ADE20K only, on one CLIP pipeline (ProxyCLIP). Every job runs on a single 24 GB RTX 3090 or 4090; SAM 3 already runs on one RTX 4090 [2606.21863].\n\nStep 0 is a go/no-go pilot costing under one GPU-day. On Cityscapes val and 500 ADE20K val images: run ActiveSAM, build found sets, and score residual presence on root tiles and first-level children. The label is 'the view contains a ground-truth component of c whose base-map coverage is below half'. For each removal variant, report AUROC and the fraction of (view, class) pairs retired at 90% recall, by class and size, against unmasked presence. The full study proceeds only if residual presence beats unmasked presence; otherwise the paper reports the negative result together with the matched-tiling study.\n\nCompute is reported as view passes, decoded (view, class) pairs and seconds per image, and accuracy is compared at matched compute.\n\nBudget (our estimate): ActiveSAM's measured 3.5-9.5 images per second on one RTX 5090 [2606.16996] puts the worst case at about 5 GPU-days for all eight benchmarks. The worst case is uniform tiling to depth 2: 43 view passes per image, or 64 on Cityscapes. This assumes a 4090 is at most twice as slow, which the pilot checks. Main runs, the three matched baselines, ablations on Cityscapes and ADE20K, and the CLIP instantiation fit in about 25 of the 40 GPU-days.\n\nTimeline: pilot and implementation in week 1, main tables in week 2, ablations and analysis in week 3, finished by 2026-11-09.",
+    "benchmarks": [
+      {"name": "Pascal VOC 2012 val (VOC21 with background, VOC20 without), 1,449 images", "task_type": "open-vocabulary semantic segmentation", "newly_constructed": false},
+      {"name": "Pascal Context val (PC60 with background, PC59 without), 5,105 images", "task_type": "open-vocabulary semantic segmentation", "newly_constructed": false},
+      {"name": "COCO-Object (COCO val2017, 80 classes, stuff as background), 5,000 images", "task_type": "open-vocabulary semantic segmentation", "newly_constructed": false},
+      {"name": "COCO-Stuff val2017, 5,000 images", "task_type": "open-vocabulary semantic segmentation (stuff-heavy, many classes)", "newly_constructed": false},
+      {"name": "Cityscapes val, 500 images (2048x1024)", "task_type": "open-vocabulary semantic segmentation (thin and small street structures)", "newly_constructed": false},
+      {"name": "ADE20K val, 2,000 images", "task_type": "open-vocabulary semantic segmentation (many classes)", "newly_constructed": false},
+      {"name": "Residual-presence pilot set: (view, class) pairs from Cityscapes val and 500 ADE20K val images, labelled by whether the view holds a ground-truth component of the class that the base map misses", "task_type": "binary detection (calibration of the zoom gate)", "newly_constructed": true},
+      {"name": "Small-segment recovery protocol: ground-truth connected components on Cityscapes val and ADE20K val, binned by size in base-view tokens per side, each marked missed or recovered", "task_type": "per-segment recall analysis", "newly_constructed": true}
+    ],
+    "baselines": [
+      "ActiveSAM [2606.16996], unchanged (main base)",
+      "SegEarth-OV3 [2512.08730], unchanged (second base)",
+      "Vanilla SAM 3 OVSS inference [2511.16719]",
+      "(i) Aspect-preserving uniform tiling: C3's roots, every root decoded, with the same fusion rule",
+      "(ii) Uniform tiling to depth cap D = 2 with the same fusion rule and write restrictions (C3's worst case)",
+      "(iii) ZoomEye-style presence-ranked quadtree [2411.16044] with the same budget, child geometry, certification and fusion, but no removal of found segments (isolates the residual gate)",
+      "(iv) Training-free MagNet-style margin-triggered zoom: expand the views with the lowest top-1 minus top-2 margin in the base map [2104.03778], with the same budget and fusion",
+      "(v) ViCrop-Det-style attention-entropy crop selection [2604.26806], adapted to SAM 3's decoder cross-attention, with the same budget and fusion",
+      "(vi) ROI-gated slicing [2608.23923]: zoom where the base map already found small segments, with the same budget and fusion",
+      "LPOSS+ pixel-level propagation [2503.19777] on the base map, alone and after C3",
+      "Published CLIP training-free numbers, for context: ProxyCLIP [2408.04883], Trident [2411.09219], OV-Stitcher on CorrCLIP [2604.08110], FreeCP [2508.00557], PEARL [2603.21528]",
+      "CLIP instantiation on Cityscapes and ADE20K: ProxyCLIP [2408.04883] alone versus with C3"
+    ],
+    "main_metrics": [
+      "Recovery rate of missed ground-truth components: overall, per class, and per size bin (tokens per side in the base view)",
+      "Small-segment recall and per-class IoU for Cityscapes pole, traffic light, traffic sign, person, rider, bicycle and motorcycle, and for the small-object classes of ADE20K",
+      "mIoU on all eight benchmarks with the shared configuration",
+      "Precision of additions: the fraction of written pixels whose ground-truth class is the written class",
+      "Change in stuff-class and large-object IoU versus the base (no-regression check)",
+      "Boundary IoU [2503.19777]",
+      "Compute: view passes, decoded (view, class) pairs and wall-clock seconds per image on one RTX 4090, plus recovery-versus-budget curves (one logged anytime run per method gives the whole curve)",
+      "Pilot: AUROC of residual versus unmasked presence for 'the view holds a missed component', and the fraction of (view, class) pairs retired at 90% recall",
+      "Context-answering rate: how often residual presence is positive on views where every ground-truth component of c is already labelled"
+    ],
+    "ablations": [
+      "No removal of found segments (= baseline iii), to isolate the residual trigger",
+      "Where removal happens: key masking in the fusion encoder and decoder after a shared backbone pass (default), token dropping inside the backbone per class, one union mask inside the backbone, or pixel fill with gray or mean colour [2204.08945][2312.07661]",
+      "Per-class removal versus one shared union mask across tested classes, measured on missed instances that touch other classes' found instances (signs on poles, riders beside bicycles)",
+      "Removal margin m = 0, 1 or 2 tokens",
+      "Re-detection guard: overlap fraction ω = 0.5 (default), strict drop on any overlap, or no guard",
+      "Fusion: coarsest-valid-view authority versus 'finest look wins' versus score maximum; each validity condition (resolved, small, contained, flagged-only) removed in turn",
+      "Roots: one squeezed square versus aspect-preserving tiles, to separate the aspect-ratio fix from the gate",
+      "Tested set: minority classes only (φ = 0.25) versus all admitted classes versus φ = 0.1 or 0.5",
+      "Children: inherited flags only versus re-testing every admitted class; updated found sets versus base found sets",
+      "Depth cap D = 1, 2 or 3; child side 0.5 (no overlap) versus 0.6",
+      "Search order at equal budget: best-first by residual presence versus breadth-first versus random among positive views",
+      "Base pipeline: ActiveSAM versus SegEarth-OV3 versus vanilla SAM 3, plus the CLIP instantiation on ProxyCLIP",
+      "Composition: with and without LPOSS+ after C3"
+    ]
+  },
+  "falsifiable_predictions": [
+    {
+      "pillar": "Residual pooled test (go/no-go)",
+      "prediction": "On Cityscapes val, residual presence separates views that hold a missed component of c from views whose components of c are all labelled better than unmasked presence does (higher AUROC), most clearly for pole, traffic sign and traffic light.",
+      "kill_condition": "Residual AUROC is not above unmasked AUROC, or residual presence stays at or above τ on most fully explained views (context answering), so that few (view, class) pairs can be retired at 90% recall."
+    },
+    {
+      "pillar": "The gate buys accuracy at matched compute",
+      "prediction": "At every budget up to the depth-cap worst case, C3 recovers more missed components than presence-ranked search without removal (iii) and than uniform tiling (ii), and it matches the recovery of (ii) with a fraction of (ii)'s view passes.",
+      "kill_condition": "On Cityscapes and ADE20K, C3's recovery-versus-passes curve lies on or below that of (iii) or (ii), with bootstrap confidence intervals overlapping at every budget."
+    },
+    {
+      "pillar": "Authority fusion protects context",
+      "prediction": "C3 keeps stuff-class and large-object IoU within noise of the base on ADE20K and COCO-Stuff, while 'finest look wins' fusion over the same views lowers them.",
+      "kill_condition": "C3 itself lowers stuff-class IoU relative to ActiveSAM, or 'finest look wins' does not lower it, which would mean the authority rule is unnecessary."
+    },
+    {
+      "pillar": "Sampling bottleneck, not recognition bottleneck",
+      "prediction": "Recovered components concentrate at sizes below about one base-view token per side and in the 2:1 Cityscapes frames, and C3's gain over aspect-preserving tiling (i) grows as components get smaller.",
+      "kill_condition": "Recovery stays near zero for components below one token per side at every zoom (a recognition bottleneck), or baseline (i) accounts for the entire gain."
+    },
+    {
+      "pillar": "Per-class removal",
+      "prediction": "Hiding only the tested class's own found segments recovers more missed instances that touch another class's found instances (signs on poles, riders beside bicycles) than one shared union mask does.",
+      "kill_condition": "Per-class and union removal recover touching instances at the same rate."
+    },
+    {
+      "pillar": "Where removal happens",
+      "prediction": "Masking after the shared backbone gives a residual AUROC close to that of token dropping inside the backbone, at a fraction of its cost.",
+      "kill_condition": "With post-backbone masking, residual presence stays close to unmasked presence (leakage through the backbone), while backbone dropping does not."
+    },
+    {
+      "pillar": "Generality across base pipelines",
+      "prediction": "Plugging C3 into SegEarth-OV3 and into ProxyCLIP also raises the recovery rate without lowering mIoU.",
+      "kill_condition": "The gains disappear outside ActiveSAM, or mIoU falls on either base."
+    }
+  ],
+  "limitations": [
+    "Gains are confined to wholly missed instances and to missed pieces of partly found ones. C3 does not move boundaries between labelled classes, so its mIoU effect may be small and the paper has to lead with recovery rate; the aspect-preserving roots (baseline i) may explain much of the Cityscapes gain.",
+    "The key assumption is unmeasured for frozen SAM 3. Once found segments are removed, residual presence may answer from context, as Adversarial Erasing observed for retrained classifiers [1703.08448], or missed thin instances may be too diluted for presence at root zoom. Either way C3 collapses to tiling, which is why the pilot is a go/no-go gate.",
+    "Region removal has been validated only for global-attention ViT classifiers [2204.08945]. SAM 3's windowed backbone, fusion encoder and DETR decoder may leak removed content [2511.16719], and the fix (token dropping inside the backbone per class) costs one backbone pass per class.",
+    "Dense scenes expose the shared cost unit: Cityscapes admits 18 of 23 prompts per image [2606.16996], so many views stay positive for some class and the cost approaches uniform tiling. The claim is therefore accuracy at matched compute, not group-testing efficiency.",
+    "A class rejected by ActiveSAM's image-level preview is never tested, and a structure SAM 3 cannot recognise at any zoom is missed in every view (correlated false negatives [2008.06642]). The hyperparameters are fixed in advance rather than tuned, and may be suboptimal on low-resolution benchmarks where zooming only upsamples."
+  ]
+}

@@ -54,7 +54,11 @@ Bash call (`for id in A B C; do $LIT fulltext $id; done`), then read and digest 
 - There is no cutoff unless the task names one: search up to today. Work from the last 12
   months counts as prior or concurrent work for novelty, so for every novelty claim also run a
   recency search (`--since` one year back).
-- The search backend is arXiv. If a load-bearing paper is not on arXiv (e.g. a CVF-only paper),
+- The search backend is arXiv. When the arXiv API is rate-limited, `$LIT` falls back to the
+  arxiv.org web pages and says so; those search results are close to date order, which is fine for
+  recency checks. For an older known paper, search its exact title phrase, or use WebSearch to find
+  its arXiv id and then `$LIT biblio <id>`. Do not loop on a failing query.
+- If a load-bearing paper is not on arXiv (e.g. a CVF-only paper),
   you may use WebSearch to find an arXiv version; a paper with no arXiv version cannot be cited,
   only mentioned by name with "(not on arXiv, not read)".
 - Do not use WebFetch to read paper bodies; use `$LIT fulltext`, which handles HTML, ar5iv and PDF.
