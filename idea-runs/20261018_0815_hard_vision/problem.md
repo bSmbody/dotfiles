@@ -1,0 +1,16 @@
+# Cheaply closing the remaining visual blind spots of frontier VLMs
+
+## Problem definition
+Frontier VLMs (e.g. GPT-6 Astra) now solve many vision tasks zero-shot, but systematic evaluations show families of "hard vision" tasks where they remain clearly below specialist models or humans. Given a frontier VLM used as a black box through its API, and small open models that can run locally (≤ 3B vision models, ≤ 8B VLMs), build a method that lifts the frontier model's accuracy on one such family of hard-vision tasks — by what it is shown, what tools it can call, or how its answer is verified — at small added cost, without training the frontier model. Input: image(s) and question/task. Output: the answer. Evaluation: accuracy on the established benchmarks for that task family, plus API cost and latency, against the frontier model alone and against the specialist.
+
+## Challenge
+The remaining failures are not uniform: some are perceptual (fine geometry, exact counting, small or thin structures, precise localisation, low-level properties), where more reasoning tokens do not help because the needed signal is lost in the model's visual encoding; others are failures to use visual evidence the model has. Generic remedies — longer reasoning, zoom-in crops, tool calls to detectors chosen by the model itself, majority voting — help unevenly, cost many calls, and the frontier model does not know when its own visual reading is unreliable, so it calls tools at the wrong moments or overrides a correct tool output. Concrete failure: asked how many teeth a gear has, or which of two thin lines is longer, the frontier model answers confidently and wrongly; given a crop or a detector output it sometimes still trusts its first impression.
+
+## Constraints
+- **Venue and deadline**: CVPR 2027 main track. Paper deadline 2026-11-16 AoE; today is 2026-10-18, so every experiment must finish by about 2026-11-09.
+- **Compute**: at most 2–4 consumer GPUs with 24 GB each (RTX 3090 / 4090), shared cluster, single-GPU jobs; the whole paper ≤ 40 GPU-days. Open VLAs that fit: π0 / π0.5 (~3B), SmolVLA (~0.5B), OpenVLA-OFT (7B, inference or LoRA), GR00T-class (~3B); open VLMs up to ~8B for inference or LoRA. No large-scale VLA pre-training.
+- **Frontier-model access**: API access to one frontier model (e.g. GPT-6 Astra) as the system being helped, a teacher or a reference; total API spend for the paper must stay modest (assume about US$1,000; the per-call cost must be measured, not assumed). The point of the work is to need the frontier model less, not more.
+- **Data**: public benchmarks and checkpoints only.
+- **Team**: a small group experienced with diffusion transformers and RL post-training; engineering risk counts against an idea.
+- **Literature**: no cutoff — search up to today. arXiv work from the last 12 months counts as prior or concurrent work; frontier-model evaluation work from Sept–Oct 2026 (e.g. what GPT-6 Astra still gets wrong in vision) is the immediate context.
+- **Significance bar**: a simulated CVPR panel will judge the result. Thin deltas over 2026 work and directional-only predictions have been rejected before; prefer a contribution that gives a new capability or a decisive cost/performance change, with a committed effect size on a standard benchmark.
