@@ -1,0 +1,16 @@
+# What the controller should tell the VLA: the controller-to-VLA interface
+
+## Problem definition
+In hierarchical robot agents a high-level controller (frontier or small VLM) communicates with a low-level VLA through some interface — a language sub-task, 2D points or traces drawn on the image, a goal image, object masks, code calling skills. Given a fixed pretrained VLA (used with no or light fine-tuning) and a controller, design the interface and how it is produced so that the VLA's success on long-horizon and out-of-distribution tasks improves, within the compute constraints. Input: instruction, observation, controller output. Output: the conditioning the VLA receives. Evaluation: success on simulated manipulation benchmarks with distribution shifts (new objects, layouts, compositions).
+
+## Challenge
+Pretrained VLAs are conditioned on language during training, so they follow short familiar commands but degrade when the controller's sub-task phrasing, object references or spatial details differ from their training distribution; richer interfaces (points, traces, goal images) need the VLA to be trained to read them, which costs data and compute the cheap setting lacks. Controllers, in turn, do not know which phrasings or cues a given VLA can actually execute. Concrete failure: a controller tells an OpenVLA-class policy to "pick up the second mug from the left"; the VLA picks the nearest mug, whereas "pick up the red mug" (the same mug) would have succeeded.
+
+## Constraints
+- **Venue and deadline**: CVPR 2027 main track (embodied / robot learning track). Paper deadline 2026-11-16 AoE; today is 2026-10-18, so every experiment must finish by about 2026-11-09.
+- **Compute**: at most 2–4 consumer GPUs with 24 GB each (RTX 3090 / 4090), shared cluster, single-GPU jobs; the whole paper ≤ 40 GPU-days. Open VLAs that fit: π0 / π0.5 (~3B), SmolVLA (~0.5B), OpenVLA-OFT (7B, inference or LoRA), GR00T-class (~3B); open VLMs up to ~8B for inference or LoRA. No large-scale VLA pre-training.
+- **Frontier-model access**: API access to one frontier model (e.g. GPT-6 Astra) as a teacher, reference controller or occasional helper; total API spend for the paper must stay modest (assume about US$1,000; the per-call cost must be measured, not assumed). The point of the work is to need the frontier model less, not more.
+- **Robots and data**: no robot hardware is assumed. Evaluation in public simulation benchmarks (e.g. LIBERO, SimplerEnv, CALVIN, RoboCasa, ManiSkill, BEHAVIOR/Habitat-style embodied agent suites) with public checkpoints and datasets.
+- **Team**: a small group experienced with diffusion transformers and RL post-training; new to robotics, so engineering risk counts against an idea.
+- **Literature**: no cutoff — search up to today. arXiv work from the last 12 months counts as prior or concurrent work; frontier-model-as-controller work from Sept–Oct 2026 is the immediate context.
+- **Significance bar**: a simulated CVPR panel will judge the result. Thin deltas over 2026 work and directional-only predictions have been rejected before; prefer a contribution that gives a new capability or a decisive cost/performance change, with a committed effect size on a standard benchmark.

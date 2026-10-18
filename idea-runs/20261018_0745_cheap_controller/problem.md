@@ -1,0 +1,16 @@
+# A small open model as the high-level controller of a VLA
+
+## Problem definition
+Replace the frontier model (e.g. GPT-6 Astra) that serves as the high-level controller of a VLA-based robot agent — decomposing instructions, choosing the next sub-task or skill, monitoring progress and triggering recovery — with a small open VLM (≤ 8B) running locally, using at most a small number of frontier-model calls offline (e.g. for teacher traces) and light adaptation of the small model. Input: instruction, observation history, a VLA that executes language sub-tasks. Output: the sub-task stream sent to the VLA. Evaluation: task success on long-horizon simulated benchmarks against the frontier-controlled stack, plus cost and latency.
+
+## Challenge
+Small open VLMs fail as embodied controllers in specific ways: they lose track of task state over long horizons (re-issuing finished sub-tasks or skipping steps), misjudge from images whether a sub-task actually succeeded, and phrase sub-tasks in ways the VLA does not execute well. Distilling frontier traces into a small model by plain imitation copies the teacher's sub-task text but not its state tracking or its judgement of when the VLA has failed, and the teacher's traces cover only the states the teacher visited, not the states the small controller drives the robot into. Concrete failure: with a 7B VLM controller, a "put both bowls in the basket, then close the drawer" task stalls after the first bowl because the controller judges the image as complete and moves to the drawer, while a frontier controller notices the second bowl is still on the table.
+
+## Constraints
+- **Venue and deadline**: CVPR 2027 main track (embodied / robot learning track). Paper deadline 2026-11-16 AoE; today is 2026-10-18, so every experiment must finish by about 2026-11-09.
+- **Compute**: at most 2–4 consumer GPUs with 24 GB each (RTX 3090 / 4090), shared cluster, single-GPU jobs; the whole paper ≤ 40 GPU-days. Open VLAs that fit: π0 / π0.5 (~3B), SmolVLA (~0.5B), OpenVLA-OFT (7B, inference or LoRA), GR00T-class (~3B); open VLMs up to ~8B for inference or LoRA. No large-scale VLA pre-training.
+- **Frontier-model access**: API access to one frontier model (e.g. GPT-6 Astra) as a teacher, reference controller or occasional helper; total API spend for the paper must stay modest (assume about US$1,000; the per-call cost must be measured, not assumed). The point of the work is to need the frontier model less, not more.
+- **Robots and data**: no robot hardware is assumed. Evaluation in public simulation benchmarks (e.g. LIBERO, SimplerEnv, CALVIN, RoboCasa, ManiSkill, BEHAVIOR/Habitat-style embodied agent suites) with public checkpoints and datasets.
+- **Team**: a small group experienced with diffusion transformers and RL post-training; new to robotics, so engineering risk counts against an idea.
+- **Literature**: no cutoff — search up to today. arXiv work from the last 12 months counts as prior or concurrent work; frontier-model-as-controller work from Sept–Oct 2026 is the immediate context.
+- **Significance bar**: a simulated CVPR panel will judge the result. Thin deltas over 2026 work and directional-only predictions have been rejected before; prefer a contribution that gives a new capability or a decisive cost/performance change, with a committed effect size on a standard benchmark.
