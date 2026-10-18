@@ -91,3 +91,90 @@
   - SuS-X and RECOUNT synthesise categories, not quantities [2211.16198, 2608.20621].
 
 - **Main risk**: The needle is a few pixels wide inside 14-px patches. When the real dial has glare, a shadowed needle, or a layout that the frontier-written renderer gets wrong (for example the arc's zero position or a non-linear scale), the sweep profile may come out flat or peak on the shadow. The abstain rule would then fire on many images, and coverage, not accuracy, would cap the gain.
+
+
+### C3 — Unwrap the dial: frontier-read numerals as the coarse code, the photo's own ticks as the fine phase, and a needle-only counterfactual sweep
+
+- **Intuition**: A dial is a multi-frequency phase measurement. Its numerals, and the frontier model's own rough reading, are coarse but unambiguous. Its tick ring is precise but periodic. On a clock, the hour hand is the coarse phase for the minute hand. Structured-light scanners read such signals hierarchically: the coarse signal only picks *which period*, and the fine signal, measured directly, gives the value. C3 reads a dial the same way:
+  - the frontier supplies only the coarse code (numeral values, unit, scale type, which hand is which);
+  - the photo's own tick lattice supplies every measured angle;
+  - a needle-only render-and-compare sweep places the pointer between its two neighbouring ticks.
+
+- **Gap it attacks**: Axis "perceptual blind spots of frontier VLMs that more reasoning does not fix", Gap 1, restricted to dial-based measurement reading.
+  - *Concrete failure.* On MeasureBench real dials the best model is right 31.5% of the time while getting the unit right 96.2% of the time. The errors are "one minor tick left/right", and thinking does not help [2510.26865]. The quantity is lost in the frontier's encoder-to-language readout.
+  - *What prior approaches miss.* Pipelines that measure geometry are trained and break on unseen designs: 8.5% on MeasureBench real images [2510.26865]. DialBench's trained reader "struggles to predict well on meter images it has never seen before" [2511.21982]. Nothing gives a black-box frontier model an answer-bearing reading of an unseen dial without training.
+  - *Why closing it matters.* A training-free reader that turns a 30% task into a usable one shows that a "hard vision" failure is a readout failure, not missing knowledge. It also hands the frontier a reliability signal that does not come through its own lossy visual pathway.
+
+- **If improving prior candidate**: Improves C2, which fitted the scale by matching an approximate frontier-written render against periodic tick rings and so invited the very one-tick aliasing that defines the failure.
+  - *Scale.* The scale is no longer fitted by render matching. It is measured from the photo. The frontier gives values; local geometry gives angles.
+  - *Aliasing.* Aliasing becomes a rounding problem with a margin. Each level of the scale hierarchy (numerals → major ticks → minor ticks) only has to choose the right period of the level below, and each level is measured directly.
+  - *Locality.* The reading is local: the needle's fraction of the interval between its two neighbouring measured ticks. An error in arc span or zero position therefore no longer shifts the whole scale. Values attach to tick indices rather than to a global linear angle model, so non-linear scales need no special case.
+  - *Needle.* The render-and-compare sweep is kept for the needle only. Its "model" is now a 2D silhouette with a handful of parameters (taper, tail or counterweight, hub, colour). Shape variants are enumerated as nuisance templates, so no exact CAD model is assumed.
+  - *Evaluation.* C3 names the frontier + classical needle-line hybrid as the key baseline, measures the GPT-6-class baseline before claiming any delta, and replaces the unsupported "≥50%" with a pilot-gated commitment.
+
+- **Source inspiration**:
+  - *Multi-frequency temporal phase unwrapping from optical 3D metrology* [1903.09836].
+    - A high-frequency fringe gives precise but 2π-ambiguous phase. A low-frequency one gives unambiguous but imprecise phase. The integer period index comes from rounding the scaled difference between the two.
+    - Rounding is exact as long as the combined error stays below half a period. The admissible error shrinks as the coarse-to-fine ratio grows, so practitioners unwrap hierarchically, step by step through intermediate frequencies. The precision of the result always comes from the fine phase [Sec II-B].
+    - Errors appear as whole-period jumps, the analogue of the one-tick reading error.
+  - *Joint multi-hypothesis unwrapping* [1608.05209] (time-of-flight depth).
+    - Sequential CRT unwrapping "propagates" early errors. Enumerating every plausible unwrapping near the wrap-around points and ranking them jointly guarantees that the true maximum is checked.
+    - The winning hypothesis's density then doubles as a single confidence threshold for outlier rejection, which gave 52% more valid measurements [Sec 2.2, 3.2, 4.5].
+  - *Needle sweep* (in-domain, kept from C2): frozen DINOv2 intermediate patch descriptors give render-to-real correspondences on texture-less shapes without training [2311.18809].
+  - *Novelty type*: **recombination-of-distant-concepts** (optical-metrology phase unwrapping × black-box VLM dial reading), plus a reinforced in-domain link (render-and-compare restricted to a low-parameter needle).
+
+- **How it maps to this problem**:
+  - *The coarse unambiguous phase* is supplied in one frontier call: numeral values with their rough clock positions, unit, scale direction and type (linear, non-linear, multiple scales), the pointers and their roles, and the frontier's own reading. Frontier models read these reliably: units 96.2% [2510.26865], in-band digits near-perfectly [2604.22829]. Its own reading errs by about one minor tick, far inside half a major interval, so it is a valid coarse code even when it is a wrong answer.
+  - *The fine periodic phase* is the photo's tick lattice. After dial detection and rectification, unwrap the annulus around the pivot into a strip, as MeterFL does [2609.31998]. Measure every tick's angle there, and tell major from minor ticks by length.
+  - *The hierarchy of frequencies* is the dial's own hierarchy:
+    - numeral → which major tick (margin: half a major interval);
+    - major tick → which minor tick (counted locally between two measured majors, not from the scale start, so a missed tick corrupts one interval rather than every later index, unlike MeterFL);
+    - minor tick → the needle's fraction of its interval.
+    - For multi-dial electricity meters, each dial is the next decade. For clocks, the hour hand is the coarse phase of the minute hand, with a fixed ratio of 12.
+  - *Joint hypothesis ranking*. C3 does not round level by level. It enumerates the few neighbouring unwrappings at each ambiguous step, including tick-count ±1, numeral-to-tick assignment ±1 and hand-role swap. It scores them jointly by agreement among the numerals, the lattice, the needle and the frontier's coarse reading. The margin of the winner over the runner-up is the reliability; a low margin means abstain.
+  - *The needle*. Render the needle silhouette alone, in a small set of shape variants, at candidate angles within a window around the frontier's coarse reading. Compare each render with the photo on the frozen-feature patches the sweep changes, as in C2. Then refine the winner at native resolution against the two flanking ticks.
+    - What the sweep handles that a frontier + Hough/line-fit hybrid cannot:
+      - *Shadows and glare.* A line fit takes the strongest straight edge. The silhouette score needs the hub, tail and tip shape, so it rejects a shadow offset from the pivot and bridges glare gaps. Reitsma's segmentation breaks on needle shadows and on white-on-white needles (IoU 0) [2404.08785].
+      - *Counterweights.* A line is 180°-symmetric, and Reitsma settles tip versus tail by a "closer end" heuristic [2404.08785]. The silhouette is asymmetric.
+      - *Tapered, spade or hollow hands.* Edge-based line fits lock onto one flank or onto the cut-out. The silhouette is centred on the needle's axis.
+      - *Multi-hand clocks.* Hough returns unlabelled lines. The joint sweep labels hands by length and width and checks that the hour hand sits where the minute hand implies, using the angle coupling [2603.08011]. This rejects the hour/minute swaps that TickTockVQA needed Swap-DPO training to suppress.
+    - *What the sweep does not handle.* Non-linear scales are handled by the scale module, not the sweep. On crisp, high-contrast single needles the hybrid should match C3, and the claimed delta lives in the nuisance subsets.
+  - *The answer*. The frontier receives the reading in its own units, plus the margin and the abstention flag.
+
+- **Why it could work / feasibility**:
+  - *Each half of C3 already works in prior systems; what was missing is having both halves together.*
+    - With a 2-gauge reader that anchors the scale on the photo's own numerals, the error is 0.77–1.15% of the range whenever its OCR reads at least two numerals. OCR, however, fails on 40–57.5% of images and is what made it collapse (444% error over all images) [2404.08785]. MeasureBench shows the frontier reads units at 96.2% versus 17.8% for that OCR [2510.26865]. In C3 the frontier takes exactly the role that broke.
+    - Explicit tick geometry with known metadata reaches 87.2% within two minor divisions and beats fine-tuned 7B VLMs [2609.31998]. In C3 the frontier supplies the metadata that MeterFL assumed.
+    - Reitsma's interpolation between numeral anchors (about 1–2% of range, roughly one minor division) is not enough. Snapping to the measured minor-tick lattice is what C3 adds.
+  - *The unwrapping condition is plausible here.* The source's condition is that the coarse error stays below half the next period [1903.09836].
+    - Dial scales step by small ratios (2, 5 or 10 minor per major), unlike the 16–64 fringe ratios that strain MF-TPU.
+    - Numeral positions sit beside their major ticks. The frontier's coarse reading is off by about one minor tick, well under half a major interval.
+    - Joint ranking guards against the residual error propagation [1608.05209].
+  - *The needle sweep's model is now small.*
+    - A 2D needle needs a few shape parameters. Enumerating a few variants is FoundPose's template retrieval over a tiny, near-exact model space [2311.18809].
+    - The window around the frontier's reading removes distant aliases (scale marks, bezel edges).
+    - Rendered needle geometry carries a transferable signal of about 2–5° on real gauges, though that was shown with a trained reader [2308.14583].
+  - *Cost.*
+    - One frontier call per image, plus an optional compose call.
+    - Locally: a detector, a polar unwrap and about 100 needle renders through DINOv2-L, about a second on one RTX 4090.
+    - No training is needed. Optionally, a 30M tick segmenter can be trained on MeterFL's public masks in GPU-hours [2609.31998].
+  - *Baselines.* All are measured on the same images:
+    - GPT-6 Astra alone at default and high reasoning effort, with per-call cost measured;
+    - **key hybrid A**: frontier semantics + numeral-anchored linear fit + Hough/line needle (Reitsma with the frontier replacing OCR);
+    - **key hybrid B**: frontier semantics + C3's unwrapped tick lattice + Hough/line needle, which isolates the sweep;
+    - TriSCA's published 28.5% for reference [2604.26614].
+  - *Pilot-gated commitment.* No delta is claimed before the pilot.
+    - Pilot set: 100 stratified MeasureBench real dials held out of the final test (single needles, clocks, multi-dial meters, glare, shadows), at a few hundred API calls, done by about 2026-10-26.
+    - Gate: the full study goes ahead only if C3 beats Astra by ≥15 points and hybrid B by ≥8 points, with bootstrap lower bounds above zero.
+    - Committed number: the pilot's lower bound, reported on the remaining ~611 real dials and on TickTockVQA, together with an oracle split (ground-truth needle → scale-only accuracy, and the reverse).
+    - If the sweep fails the hybrid-B gate, the paper reports hybrid B as the method, still a training-free frontier-plus-geometry reader, and states the needle result as negative.
+  - *Key assumption.* On most real MeasureBench dials the tick lattice is resolvable after rectification at the available resolution. Where it is not, C3 must abstain rather than guess.
+
+- **Novelty vs. closest in-domain work**: The closest prior systems are Reitsma et al. [2404.08785] and MeterFL [2609.31998].
+  - Reitsma anchors the scale on OCR'd numerals, interpolates linearly between them, and fits a line to a segmented needle.
+  - MeterFL counts a trained tick segmentation from the scale start with metadata supplied.
+  - C3 uses numerals only as the coarse code of a hierarchical, jointly ranked unwrapping onto the measured tick lattice. The frontier reads the code, and a needle-silhouette sweep with clock-hand coupling locates the pointer. Nothing in the pipeline is trained.
+  - Searches found no dial or gauge reader that uses phase unwrapping: "phase unwrapping gauge", "gauge reading", "pointer meter", "clock hands hour minute", "scale tick detection" and "gauge VLM", with `--since` 2025-10 recency runs.
+  - Recent readers are trained: DialBench [2511.21982], TriSCA [2604.26614] and Swap-DPO [2603.08011].
+
+- **Main risk**: On low-resolution web photos the minor ticks may not be resolvable after rectification. The fine phase is then missing, and C3 either abstains often (coverage caps the gain) or falls back to numeral interpolation, which sits at the one-tick tolerance.
