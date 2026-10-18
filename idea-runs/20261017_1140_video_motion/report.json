@@ -1,0 +1,352 @@
+{
+  "title": "Unsticking the Subject: Withholding Guidance's Frame-Identical Coarse Push While RoPE-Anchored Trajectories Compete in Text-to-Video Diffusion Transformers",
+  "topic_relevance": {
+    "sub_topic": [
+      "training-free sampling for text-to-video diffusion and flow-matching transformers",
+      "classifier-free guidance design for video",
+      "early-step motion commitment and positional (RoPE) anchoring in video DiTs"
+    ],
+    "primary_focus": [
+      "under-animation (subjects held at fixed screen coordinates) in small open T2V models such as Wan2.1-T2V-1.3B",
+      "decomposing the CFG difference along time (frame-shared vs. frame-varying) and space (coarse vs. fine) and giving one cell a different gain during a commitment window",
+      "a causal test of whether CFG's extrapolated frame-identical layout term feeds RoPE spatial anchoring",
+      "making the guidance scale usable as a motion control at plain CFG cost (2 NFE per step)"
+    ]
+  },
+  "one_sentence_thesis": "Early guidance stamps the same coarse layout onto every frame at the same spot; we propose withholding only that part so moving subjects can win.",
+  "core_problem": {
+    "problem_statement": "Within the first ~5 of 50 steps, Wan2.1-T2V-1.3B settles a competition between trajectory candidates, and RoPE spatial anchoring makes frames that commit late adopt the positions of frames that committed early, which can leave a subject stationary [2609.23658][2506.01144]. Raising the CFG scale then sharpens frames but adds little motion, because every zero-cost guidance rule (a scalar, a spatial field, or a per-token gain) extrapolates the frame-identical coarse layout push together with the frame-varying placement push [2603.14073][2604.26503][2610.14153].",
+    "why_it_matters": [
+      "Practitioners on 24 GB consumer GPUs run 1–3B open T2V models, whose common failure is under-animation. In MotionCFG's study, the dynamics of plain negative-prompt CFG 'cluster in a narrow range' across its hyperparameter sweep, and the baseline 'often produces nearly static frames' [2603.14073]. The guidance scale therefore cannot serve as a motion control.",
+      "Each existing training-free fix pays elsewhere:\n- FlowMo costs ×2.39 time and lowers dynamic degree [2506.01144].\n- MotionCFG needs an external LLM and a delayed schedule on CogVideoX [2603.14073].\n- ByTheWay and Enhance-A-Video need per-backbone or per-prompt constants [2410.06241][2502.07508].\n- ALG and DyMoS need a conditioning image that pure T2V lacks [2506.08456][2605.19398].",
+      "Coherence-oriented samplers keep or reduce motion, so a coherent but static commitment is a fixed point of their objectives:\n- FlowMo's variance loss [2506.01144];\n- SRVS's temporal mode-seeking [2601.18577];\n- SpecLoR's prompt-agnostic amplitude envelope with the phase left untouched [2606.11969];\n- FreeInit's low-band re-initialisation [2312.07537].",
+      "The anchoring mechanism has been analysed only in the conditional branch. Its one training-free lever, a global λ on the RoPE height and width frequencies, has three problems: it needs per-seed hand tuning (0.50–0.85), it often destabilises object permanence, and a learnable per-head λ failed [2609.23658]. No published work links the CFG combination rule to anchoring.",
+      "Evaluation rewards static output. Per-video dynamics correlates strongly and negatively with subject and background consistency [2407.01094], and a completely static video scores well on VBench's consistency dimensions [2311.17982]. Methods that trade motion for consistency therefore look like improvements."
+    ],
+    "concrete_example": "Prompt 'a dog running across a beach' on Wan2.1-T2V-1.3B at w = 6 (the problem's illustrative failure). The dog trots in place near the frame centre while the sand slides behind it. Raising w gives crisper fur and stronger colours, but the dog stays at the same screen coordinates. Switching early guidance off altogether is no remedy: on this model, Interval Guidance lowered FLOW from 4.10 to 3.76 and CLIPScore from 0.2535 to 0.2392 [2603.14073]. Training-free RoPE-λ can move the dog, but λ must be retuned per seed and objects may vanish or morph [2609.23658]."
+  },
+  "key_novelty": {
+    "main_idea": "UnStick-CFG: during the commitment window, guide the frame-identical coarse part of the CFG difference at gain 1 and everything else at gain w",
+    "explanation": [
+      "Part of CFG's push toward the prompt is identical in every frame. It works like a long-exposure photo of the prompt's layout, pasted at the same screen spot into all frames.",
+      "Rotary positions make video transformers reward cross-frame agreement at the same location, so the pasted part works like StyleGAN2's hidden positional reference and glues the subject to the screen.",
+      "While trajectory candidates still compete, we stop amplifying only that pasted coarse part, keep full guidance on the frame-varying coarse part and on fine detail, then return to plain guidance."
+    ]
+  },
+  "problem_definition": {
+    "formal_setting": "Let f_θ be a frozen T2V denoiser (rectified-flow velocity or v-prediction). At step k of K, convert the conditional and unconditional outputs to clean-video estimates x̂_c, x̂_∅ ∈ R^{F×C×H×W}, where F is the number of latent frames. Plain CFG uses x̂ = x̂_∅ + w·D with D = x̂_c − x̂_∅, at 2 NFE per step. We define three linear projections:\n- L: spatial low-pass, the coarsest level of a per-frame Gaussian/Laplacian pyramid.\n- H = I − L: the fine spatial band.\n- M: temporal mean, (M z)_f = (1/F) Σ_{f'} z_{f'}, broadcast to all frames.\nThese give an exact 2×2 split D = M L D + (I − M) L D + M H D + (I − M) H D. UnStick-CFG uses x̂ = x̂_∅ + w·D − (w − g_s)·M L D for k ∈ [k0, k1], with g_s = 1 by default, and plain CFG otherwise. The goal is to raise prompt-appropriate motion (RAFT flow and dynamic degree on high-motion prompts, with no rise on static prompts) while keeping per-frame quality, text alignment and subject consistency at matched dynamics no worse than CFG, at exactly 2K NFE.",
+    "inputs": "A text prompt; a frozen pretrained T2V transformer (Wan2.1-T2V-1.3B as primary; CogVideoX-2B, CogVideoX-5B and LTX-Video for transfer and contrast); initial Gaussian noise (seed); the backbone's default solver and step count; the guidance scale w and negative prompt; and the UnStick-CFG settings: window [k0, k1], pyramid depth J and shared-coarse gain g_s.",
+    "outputs": "A generated video, decoded by the backbone's VAE, at the same NFE as CFG. Each step also logs, at no extra cost, the energy split of the guidance difference across the four cells and the share of the same-position coarse evidence that the extrapolation contributes."
+  },
+  "key_terms": {
+    "CFG difference (D)": "The conditional prediction minus the unconditional one. CFG adds w times this to the unconditional prediction.",
+    "frame-shared (temporal-mean) part": "The average of a video tensor over frames, copied back into every frame. It is identical at each screen position in every frame and carries no motion.",
+    "frame-varying (inter-frame) part": "What remains after subtracting the temporal mean. It holds everything that differs between frames, including where the subject is placed in each frame.",
+    "coarse band": "The lowest-spatial-frequency level of an image pyramid applied to each latent frame: blurry layout and position, without texture.",
+    "RoPE spatial anchoring": "In video transformers with rotary position embeddings, attention between tokens decays with their spatial offset. A region therefore attends most to the same region in other frames, and frames that settle early pull other frames' content onto the same position [2609.23658].",
+    "trajectory-candidate competition": "In the first few denoising steps, the object token's cross-attention marks several candidate regions per frame. These candidates compete until one trajectory wins, around step 5 of 50 on Wan2.1-1.3B [2609.23658].",
+    "commitment window": "The early steps in which coarse layout and motion are decided. Here it is steps 1–5 of 50 on Wan2.1-1.3B, from the measured competition [2609.23658][2506.01144].",
+    "texture sticking": "A GAN failure in which detail stays fixed in screen coordinates while objects move. It is caused by positional references the generator can see and amplify [2106.12423], and it also occurs in video GANs [2212.07413].",
+    "FDG along time": "Our control arm. It applies frequency-decoupled guidance [2506.19713] in the commitment window by giving gain 1 to the whole coarse band, both its frame-shared and frame-varying parts.",
+    "mutual consistency (MC)": "A head-averaged, normalised cross-frame self-attention intensity between candidate regions. It is used to measure which candidate anchoring favours [2609.23658].",
+    "dynamic degree": "VBench's share of videos judged non-static, based on the mean of the top 5% of RAFT flow magnitudes [2311.17982].",
+    "dynamics controllability (D_control)": "DEVIL's rank agreement between the dynamics grade a prompt asks for and the dynamics the generated video shows [2407.01094]."
+  },
+  "related_work": [
+    {
+      "sub_area": "When and how coarse motion commits during denoising",
+      "what_it_does": "Several analyses locate coarse motion early in sampling:\n- FlowMo decodes the clean estimate on Wan2.1-1.3B and finds layout by about step 4 and motion in steps 4–8 [2506.01144].\n- Prompt-tampering probes on three architectures find an early motion-dominant regime at τ≈700–900 of 1000 [2512.22175].\n- Motion-energy maps of x̂0 converge 93% by step 5 of 40. Re-noising the same seed changes the route by at most 25%, against 68% across seeds [2603.30043].\n- The DiT objective is nearly invariant to frame shuffling at high noise, which biases models toward appearance [2502.02492].\n\nThe sharpest mechanism is RoPE spatial anchoring in Wan2.1-T2V-1.3B. Object-token cross-attention shows several candidate regions per frame that compete until about step 5. Through RoPE's decay with spatial offset, an early-settled frame raises same-position candidates elsewhere and can leave 'the basketball ... stationary in the air' [2609.23658].",
+      "open_gap": "The anchoring analysis covers only the conditional branch [2609.23658], and sampling actually runs on the CFG combination. Nobody has asked whether guidance's frame-identical term feeds anchoring. The only lever on anchoring is a global λ edit of the positional encoding [2609.23658].",
+      "citations": ["2506.01144", "2512.22175", "2603.30043", "2502.02492", "2609.23658"]
+    },
+    {
+      "sub_area": "Reshaping or reallocating the CFG update",
+      "what_it_does": "These methods change how the CFG update is applied:\n- MotionCFG swaps the null anchor for LLM-selected, noise-perturbed motion tokens in early steps, with one scalar ω [2603.14073].\n- SAMG makes the gain a per-pixel field driven by guidance energy [2604.26503].\n- APG down-weights the update component parallel to the prediction, in images [2410.02416].\n- MAMBO-G sets the scale from a global magnitude ratio [2508.03442].\n- TrajCFG gives each token its own gain from trajectory direction changes, within [5, 10] around base 6 on Wan2.1-1.3B, raising dynamic degree from 65.28 to 70.83 at zero extra NFE [2610.14153].\n- CFG-Zero* rescales the unconditional branch and zeroes the first update [2503.18886].\n- Interval Guidance withholds all guidance at high noise in images [2404.07724].\n- FDG gives separate gains to the low and high spatial bands of the guidance in images, under a general linear-invertible-transform rule [2506.19713].",
+      "open_gap": "None of these splits the video guidance difference along time. A scalar, a spatial field or a per-token gain always scales a token's frame-shared and frame-varying content together. Time-only schedules such as Interval Guidance switch both off at once, which lowered FLOW and CLIPScore on Wan2.1-1.3B [2603.14073].",
+      "citations": ["2603.14073", "2604.26503", "2410.02416", "2508.03442", "2610.14153", "2503.18886", "2404.07724", "2506.19713"]
+    },
+    {
+      "sub_area": "Training-free motion boosters through attention, conditioning or extra guidance terms",
+      "what_it_does": "These methods add motion without changing the CFG rule:\n- ByTheWay amplifies the high-frequency energy of temporal-attention maps, with per-backbone β [2410.06241].\n- Enhance-A-Video rescales temporal-attention output with a temperature that is best set per prompt [2502.07508].\n- STG adds a layer-skipped weak-model direction. It is a quality direction that keeps T2V dynamic degree unchanged, at a third NFE [2411.18664].\n- TPD gates the CFG update per frame with an LLM and a third branch, to make late events happen [2607.26706].\n- In I2V, ALG low-passes the conditioning image in early steps [2506.08456], and DyMoS reduces early attention to the reference frame in the conditional branch only. DyMoS raises dynamic degree, for example on CogVideoX-5B from 30.9 to 52.9 [2605.19398].",
+      "open_gap": "Some of these levers require a conditioning image (ALG, DyMoS). The others are attention or anchor edits with per-model or per-prompt constants. None touches the frame-identical component that text CFG itself writes into every frame. DyMoS establishes, in I2V, the general principle that early frame-shared content suppresses motion. It is frame-level and position-independent, and it does not apply to pure T2V [2605.19398].",
+      "citations": ["2410.06241", "2502.07508", "2411.18664", "2607.26706", "2506.08456", "2605.19398"]
+    },
+    {
+      "sub_area": "Coherence-oriented samplers and noise re-initialisation",
+      "what_it_does": "These samplers improve coherence or re-initialise noise:\n- FlowMo takes gradient steps that lower patch-wise temporal variance of frame differences [2506.01144].\n- SRVS runs predict-and-perturb at a fixed early noise level [2601.18577].\n- SpecLoR clips the early clean estimate's 3D amplitude spectrum toward a natural-video envelope while locking the phase [2606.11969].\n- FreeInit and FreqPrior re-diffuse their own samples to refresh noise bands [2312.07537][2502.03496].\n- VideoGuide interpolates toward a teacher's denoised estimate [2410.04364].\n- Learned latent rewards screen seeds early [2606.20310][2603.14526].",
+      "open_gap": "Their objectives are prompt-independent coherence or typicality, so a coherent but static commitment is kept. Several lower dynamic degree (FlowMo, FreeInit, SpecLoR-stochastic, VideoGuide). The seed screeners need trained heads and only choose among seeds.",
+      "citations": ["2506.01144", "2601.18577", "2606.11969", "2312.07537", "2502.03496", "2410.04364", "2606.20310", "2603.14526"]
+    },
+    {
+      "sub_area": "Copyable shared content as a cause of stasis",
+      "what_it_does": "Three methods tie stasis to shared content:\n- In History Guidance, strong vanilla guidance on full-band history frames makes videos static, because copying the last history frame is a trivial solution. Fractional history keeps the low band under guidance and restores dynamics [2502.06764].\n- ALG blames the I2V static shortcut on early exposure to the conditioning image's high-frequency detail, and keeps its coarse layout under full guidance [2506.08456].\n- DyMoS blames reference-frame dominance in early self-attention [2605.19398].",
+      "open_gap": "In all three, the shared content is a conditioning input that the network reads and can place anywhere, so its coarse band is compatible with motion. In T2V CFG, the frame-identical part is instead added directly to the state at the same coordinates in every frame. Neither the band inversion nor this positional case has been studied.",
+      "citations": ["2502.06764", "2506.08456", "2605.19398"]
+    },
+    {
+      "sub_area": "Positional references and texture sticking in generators (cross-domain source)",
+      "what_it_does": "StyleGAN3 traces texture sticking to unintended positional references: borders, per-pixel noise inputs, positional encodings and aliasing. The network 'has the means and motivation to amplify' these references into motifs fixed in screen coordinates. The fix removes the references so that position is 'exclusively inherited from the underlying coarse features', and an averaged-image test diagnoses sticking [2106.12423]. StyleSV shows the same 'brush effect' in video GANs and removes it by reducing dependence on absolute coordinates [2212.07413].",
+      "open_gap": "Both fixes are architectural and require retraining, and neither considers diffusion sampling or guidance. In both, the references carry no content. In UnStick-CFG, the withheld term is the prompt's own layout evidence, so withholding it may cost alignment.",
+      "citations": ["2106.12423", "2212.07413"]
+    },
+    {
+      "sub_area": "Extrapolating differences: motion magnification",
+      "what_it_does": "Eulerian magnification extrapolates inter-frame differences (anchor + α × difference). It keeps texture unmagnified and warns that the intensity variant blurs and degrades under large motion [1804.02684]. Extrapolating along a basis that does not encode position brightens, blurs or cross-fades rather than moving structure [2506.02300].",
+      "open_gap": "These results argue against the alternative design of raising the inter-frame gain above w, so UnStick-CFG only lowers the frame-identical gain. The raise is kept as an ablation.",
+      "citations": ["1804.02684", "2506.02300"]
+    },
+    {
+      "sub_area": "Measuring motion amount, motion quality and alignment",
+      "what_it_does": "The evaluation tools are:\n- VBench: dynamic degree (RAFT top-5% flow), motion smoothness, subject and background consistency, imaging quality and ViCLIP overall consistency [2311.17982], built on RAFT [2003.12039].\n- DEVIL: prompts graded 1–5 for dynamics, plus dynamics controllability and dynamics-based quality [2407.01094].\n- VideoAlign/VideoReward: separate VQ, MQ and TA preference scores [2501.13918].\n- HPSv3: per-image preference [2508.03789].\n- VideoJAM-bench: 128 motion-heavy prompts with a 2AFC human protocol [2502.02492].",
+      "open_gap": "These metrics anti-correlate with dynamics [2407.01094]. Gains must therefore be shown with quality compared at matched dynamics, and on prompts split by how much motion they ask for.",
+      "citations": ["2311.17982", "2003.12039", "2407.01094", "2501.13918", "2508.03789", "2502.02492"]
+    }
+  ],
+  "method": {
+    "high_level_flow": [
+      "Per step: frozen DiT conditional pass + unconditional pass -> convert both outputs to clean-video estimates (x̂_c, x̂_∅)",
+      "Inside the commitment window: guidance difference D -> spatial pyramid split (coarse L D / fine H D) -> temporal split of the coarse band (frame mean M L D / residual (I−M) L D) -> recombine with gain g_s = 1 on M L D and gain w on the other three cells",
+      "Outside the window: plain CFG recombination (all cells at gain w)",
+      "Solver: guided clean estimate -> velocity (or noise) -> backbone's default solver step",
+      "Free diagnostics: cell energy shares and guidance share of same-position coarse evidence -> per-step log"
+    ],
+    "modules": [
+      {
+        "module": "Frozen backbone predictor",
+        "role": "Produces the conditional and unconditional predictions at each step. These are the only two network evaluations per step, the same as CFG.",
+        "model": "Wan2.1-T2V-1.3B: rectified-flow DiT with umT5 cross-attention and Wan-VAE latents of 16 channels at [1+T/4, H/8, W/8] [2503.20314]. Transfer and contrast backbones: CogVideoX-2B (v-prediction, sinusoidal absolute positions), CogVideoX-5B (v-prediction, 3D-RoPE) [2408.06072], and LTX-Video (rectified flow, RoPE, 32×32×8-pixel tokens) [2501.00103].",
+        "inputs": ["noisy latent x_t", "text embedding c", "null/negative embedding ∅", "timestep t_k"],
+        "outputs": ["conditional prediction", "unconditional prediction"],
+        "notes": "Run in bf16 on a single 24 GB GPU; Wan2.1-1.3B needs 8.19 GB VRAM [2503.20314]. CogVideoX-5B uses 26 GB on an H800 [2408.06072], so here it runs inference-only with CPU offloading. No hooks are needed for the method itself; the attention hooks serve only the mechanism probe."
+      },
+      {
+        "module": "Prediction-space converter",
+        "role": "Maps both outputs to clean-video estimates so the bands are defined on the video content, as FDG does [2506.19713], and maps the guided estimate back afterwards.",
+        "model": "Closed-form, no parameters",
+        "inputs": ["velocity or v-prediction", "x_t", "noise level"],
+        "outputs": ["x̂_c", "x̂_∅"],
+        "notes": "For rectified flow, x̂0 = x_t − σ_t·v, which is affine in v with x_t shared by both branches, so splitting in velocity space is equivalent [2503.20314][2501.00103]. CogVideoX uses the standard v-to-x0 conversion [2408.06072]."
+      },
+      {
+        "module": "Spatial band splitter",
+        "role": "Separates the guidance difference into a coarse band (layout and position) and a fine band (texture and detail).",
+        "model": "Per-frame, per-channel Gaussian/Laplacian pyramid on the latent",
+        "inputs": ["D = x̂_c − x̂_∅"],
+        "outputs": ["L D (coarse)", "H D = D − L D (fine)"],
+        "notes": "On Wan2.1-1.3B, depth J = 2: blur and downsample twice, then upsample back, so the coarse grid is 1/4 of the latent resolution. LTX-Video's latent is already very coarse (each token is 32×32 pixels [2501.00103]), so J = 1 is used there. J ∈ {1, 2, 3} is ablated. Early guidance energy is low-band [2506.19713]."
+      },
+      {
+        "module": "Temporal mean splitter",
+        "role": "Separates the coarse band into its exactly frame-identical part and its frame-varying remainder.",
+        "model": "Mean over latent frames, broadcast back to every frame",
+        "inputs": ["L D"],
+        "outputs": ["M L D (frame-identical coarse)", "(I − M) L D (frame-varying coarse)"],
+        "notes": "Default: mean over all latent frames. Ablation: exclude the first latent frame, which Wan-VAE compresses only spatially [2503.20314]. Only the temporal DC is used, not a temporal low-pass, so that the change relative to CFG is exactly frame-identical."
+      },
+      {
+        "module": "Gain recombiner and window scheduler",
+        "role": "Rebuilds the guided estimate with gain g_s on the frame-identical coarse cell during the commitment window and plain CFG everywhere else.",
+        "model": "x̂ = x̂_∅ + w·D − (w − g_s)·M L D for k ∈ [k0, k1]; otherwise x̂ = x̂_∅ + w·D",
+        "inputs": ["x̂_∅", "D", "M L D", "step index k"],
+        "outputs": ["guided clean estimate x̂"],
+        "notes": "g_s = 1 gives that cell the plain conditional prediction's own value, x̂_c's coarse frame mean, with no extrapolation. Gains 1 and w are both values the model is normally sampled with. Wan2.1-1.3B uses window steps 1–5 of 50, from the measured competition [2609.23658]. CogVideoX uses a delayed start, because its earliest clean estimates are dominated by watermarks [2603.14073]. LTX-Video's window is set by the same pilot procedure (first ~10% of steps)."
+      },
+      {
+        "module": "Free diagnostic logger",
+        "role": "Tests the method's premises at no extra cost.",
+        "model": "Norm ratios on tensors already computed",
+        "inputs": ["the four cells of D", "x̂_c"],
+        "outputs": ["ρ_k = ‖M L D‖² / ‖D‖² per step", "guidance share of same-position coarse evidence: ‖(w − 1)·M L D‖ / ‖M L x̂_c‖"],
+        "notes": "ρ_k tests the appearance-dominance premise [2506.01144]. The second ratio tests the key assumption that the extrapolated term is large compared with the conditional branch's own shared layout."
+      },
+      {
+        "module": "Mechanism probe (analysis only)",
+        "role": "Measures whether UnStick-CFG changes which candidate anchoring picks.",
+        "model": "Object-token cross-attention candidate extraction and mutual-consistency (MC) measurement as in [2609.23658], applied to the guided sampler",
+        "inputs": ["cross-attention maps for the subject token, steps 1–8", "self-attention maps"],
+        "outputs": ["per-frame candidate regions", "MC of same-position candidates", "winner location relative to the earliest-committed frame", "winner-flip events"],
+        "notes": "Run only on the ~50 pilot seeds, because storing attention maps is memory-heavy. [2609.23658] studied only the conditional branch, so the CFG and UnStick-CFG arms extend that analysis to the guided sampler."
+      }
+    ],
+    "novel_architectural_elements": [
+      "The CFG difference is decomposed 2×2 between the two CFG branches and the solver: spatial coarse/fine crossed with temporal frame-mean/residual. Exactly one cell, coarse × frame-mean, is routed at gain 1 and the other three at gain w.",
+      "The gain change is gated by a step window tied to the measured trajectory-candidate competition, not to a fixed noise interval. Plain CFG is restored after the window.",
+      "The intervention sits entirely on the sampler side of RoPE anchoring. It changes the evidence fed into anchoring and leaves positional encoding, attention and weights untouched.",
+      "The three cells at gain w form a composable slot: TrajCFG's per-token gains [2610.14153] or a RoPE-λ edit [2609.23658] can be plugged in without touching the withheld cell. This is used for the interaction tests."
+    ],
+    "pseudocode": "```python\ndef unstick_cfg_sample(model, prompt, neg, x_T, steps, w=6.0, win=(1, 5), g_s=1.0, J=2):\n    x = x_T\n    for k, t in enumerate(steps, start=1):\n        out_c = model(x, t, prompt)   # NFE 1\n        out_u = model(x, t, neg)      # NFE 2\n        xc = to_clean(out_c, x, t)    # x0 = x_t - sigma_t * v  (rectified flow)\n        xu = to_clean(out_u, x, t)\n        D = xc - xu                   # shape [F, C, H, W] (latent frames first)\n        x0 = xu + w * D               # plain CFG\n        if win[0] <= k <= win[1]:\n            LD = pyramid_lowpass(D, depth=J)          # per-frame spatial coarse band\n            MLD = LD.mean(dim=0, keepdim=True)        # frame-identical coarse cell\n            x0 = x0 - (w - g_s) * MLD                  # broadcast over frames\n            log(rho=norm(MLD)**2 / norm(D)**2,\n                share=(w - 1) * norm(MLD) / norm(pyramid_lowpass(xc, J).mean(0)))\n        v = from_clean(x0, x, t)      # back to the solver's parameterisation\n        x = solver_step(x, v, t)\n    return vae_decode(x)\n\n# Control arms (same loop, same NFE):\n#   FDG-along-time:  x0 -= (w - 1) * LD               (whole coarse band at gain 1)\n#   guidance-off:    x0 = xc                           (interval-style, in window)\n#   C1-style raise:  x0 += (a - w) * (LD - MLD)        (frame-varying coarse at gain a > w)\n```",
+    "design_choices": [
+      "Gain 1, not 0, on the withheld cell. Gain 1 keeps the conditional prediction's own coarse layout, so the prompt still sets where things are, and removes only the (w − 1)-fold extrapolation. Gain 0 would replace the prompt's layout with the unconditional one.",
+      "Only the coarse band is split. Early guidance energy sits in the low spatial band [2506.19713], and position commits at coarse scale [2609.23658]. Fine frame-shared detail keeps gain w because the fine-detail copying shortcut of History Guidance and ALG is a different mechanism [2502.06764][2506.08456]. Withholding fine shared detail is kept as an ablation.",
+      "Only the exact temporal mean, not a temporal low-pass. Any frame-varying component carries per-frame placement. Restricting the change to the DC makes the change from CFG identical in every frame, so it adds no inter-frame difference and cannot create the ghosting or cross-fades that additive extrapolation in a non-positional basis produces [1804.02684][2506.02300].",
+      "The frame-varying gain is never raised above w. Under plain CFG the inter-frame part already gets the full gain, and sweeping it barely changes dynamics [2603.14073]. Raising it is kept as the 'mechanism (b)' ablation.",
+      "The window is set from the measured competition (steps 1–5 of 50 on Wan2.1-1.3B [2609.23658]). It is consistent with layout forming by step 4 and motion forming in steps 4–8 [2506.01144]. Plain CFG returns afterwards, as mid-range guidance restores detail in Interval Guidance [2404.07724]. The window is delayed on CogVideoX because of watermark-dominated early estimates [2603.14073].",
+      "The decomposition is applied in clean-estimate space, following FDG [2506.19713]. This is exactly equivalent to velocity space for rectified flow because the conversion is affine with x_t shared.",
+      "RoPE is left untouched, unlike the λ fix [2609.23658]. Anchoring keeps holding identity and static background together, and the amount withheld scales with each prompt's own guidance at each step instead of one global λ that needed per-seed tuning."
+    ],
+    "theoretical_grounding": "**Exactness.** M averages over frames and L filters every frame identically, so both are linear and they commute. With H = I − L, the split D = M L D + (I − M) L D + M H D + (I − M) H D holds exactly by construction. With all gains equal to w the rule reduces to CFG. The change from CFG, Δ = −(w − g_s)·M L D, is identical in every frame, so Δ_{f+1} − Δ_f = 0: the guided estimate's inter-frame differences are exactly CFG's [2506.19713].\n\n**Why it can matter (our inference, untested).** For tokens in frames f and f′ at spatial positions p and p′, the RoPE attention logit is Re Σ_a q^a k^a* e^{iΔp^a θ_a}. Its spatial rotation is the identity at Δp^h = Δp^w = 0, and the logit decays with spatial offset [2609.23658]. An additive component that is identical across frames makes token content agree exactly at zero spatial offset. That is where anchoring already puts the most weight, so it favours the stationary candidate. At w = 6 the extrapolated part of that component is five times the branches' own frame-shared coarse gap. Withholding it lowers zero-offset agreement without changing any frame difference. [2609.23658] did not test this link.\n\n**Cross-domain principle.** A generator that sees a screen-fixed reference and rewards same-coordinate agreement binds content to that reference. Removing the reference, not the mechanism, lets position follow the content [2106.12423][2212.07413].\n\n**Limit.** UnStick-CFG can only change which of the conditional branch's own candidates wins. It cannot create a trajectory the model never proposes [2506.01144][2607.26706]."
+  },
+  "model_details": {
+    "base_model": "Wan2.1-T2V-1.3B (primary; frozen, bf16, single 24 GB GPU) [2503.20314]. Transfer: CogVideoX-2B (sinusoidal absolute positions) [2408.06072] and LTX-Video (~1.9B, RoPE) [2501.00103]. Positional-encoding contrast: CogVideoX-5B (3D-RoPE), inference-only with CPU offloading [2408.06072].",
+    "training": {
+      "method": "No model training. UnStick-CFG is a training-free change to the sampler's guidance combination rule; no weights, LoRA or adapters are updated. This differs from the RoPE-λ fix, whose main results required LoRA fine-tuning on 80K videos [2609.23658].",
+      "objective_functions": [
+        "Purpose: none is optimised. The method is a deterministic recombination of the two CFG predictions. Formally: x̂ = x̂_∅ + w·D − (w − g_s)·M L D for k ∈ [k0, k1], and x̂ = x̂_∅ + w·D otherwise, with D = x̂_c − x̂_∅.",
+        "Purpose: a diagnostic, not a loss, that measures how much of the guidance is frame-identical and coarse. Formally: ρ_k = ‖M L D_k‖² / ‖D_k‖², logged per step.",
+        "Purpose: a diagnostic that measures how large the extrapolated frame-identical term is relative to the conditional branch's own shared layout. Formally: s_k = (w − 1)·‖M L D_k‖ / ‖M L x̂_{c,k}‖."
+      ],
+      "adaptation": "None (frozen pretrained weights). Only sampling-time hyperparameters are set per backbone: the window start and length, and the pyramid depth.",
+      "key_hyperparameters": {
+        "guidance_scale_w": "6.0 on Wan2.1-1.3B, the setting used by MotionCFG and TrajCFG [2603.14073][2610.14153]; swept over {3, 4.5, 6, 7.5, 9}",
+        "window_steps": "1–5 of 50 on Wan2.1-1.3B [2609.23658]; ablated over {1–3, 1–8, 1–12}; delayed start on CogVideoX [2603.14073]",
+        "shared_coarse_gain_g_s": "1.0 by default; ablated over {(1 + w)/2, w (= CFG)}",
+        "pyramid_depth_J": "2 on Wan2.1 and CogVideoX latents, 1 on LTX-Video; ablated over {1, 2, 3}",
+        "temporal_operator": "mean over all latent frames; ablated with the first latent frame excluded",
+        "sampling_steps": "50, using the backbone's default solver [2503.20314][2408.06072]",
+        "NFE_per_video": "2 per step (100 at 50 steps), identical to CFG"
+      }
+    }
+  },
+  "comparison_to_sota": {
+    "related_methods": [
+      "CFG: one scalar gain on the whole conditional-minus-negative difference",
+      "FDG [2506.19713]: separate gains for the low and high spatial bands of the guidance (images), against saturation and diversity loss",
+      "Interval Guidance [2404.07724]: no guidance at high noise, plain conditional prediction there",
+      "CFG-Zero* [2503.18886]: optimised unconditional scale plus a zeroed first update",
+      "TrajCFG [2610.14153]: per-token gains in [5, 10] set from trajectory direction changes; zero extra NFE",
+      "MotionCFG [2603.14073]: early-window negative anchor from noise-perturbed, LLM-selected motion tokens",
+      "RoPE-λ [2609.23658]: global scale λ < 1 on the RoPE height/width frequencies for steps 1–5; training-free or with LoRA",
+      "DyMoS [2605.19398]: early, conditional-branch-only reduction of attention to the reference frame (I2V)",
+      "ALG [2506.08456]: early low-pass of the I2V conditioning image",
+      "FlowMo [2506.01144], SRVS [2601.18577], SpecLoR [2606.11969]: coherence-oriented early-window samplers"
+    ],
+    "key_differences": [
+      "vs. FDG along time [2506.19713]: FDG would withhold the whole coarse band early, including its frame-varying part, which in our account carries the per-frame placement evidence that should decide the competition. UnStick-CFG splits the coarse band along time and withholds only the frame-identical cell. As a method the delta is small; prediction (i) decides whether it matters.",
+      "vs. Interval Guidance [2404.07724] and CFG-Zero* [2503.18886]: these weaken early guidance as a whole, and Interval Guidance lowered FLOW and CLIPScore on Wan2.1-1.3B [2603.14073]. UnStick-CFG keeps gain w on three of the four cells, so frame-varying guidance and fine detail stay fully guided. CFG-Zero*'s dynamic-degree figure (68.90 vs 65.28) comes from the full method and cannot be attributed to its zero-init [2610.14153].",
+      "vs. TrajCFG [2610.14153]: TrajCFG raises gains on foreground tokens, so it extrapolates the subject's frame-identical coarse term harder. UnStick-CFG lowers exactly that term. They compose when TrajCFG's gains are confined to the three gain-w cells.",
+      "vs. RoPE-λ [2609.23658]: λ weakens anchoring itself by giving the network positional encodings it never saw. It needs per-seed tuning, often destabilises object permanence, and needed LoRA for its main results. UnStick-CFG leaves the encoding and network untouched and removes only the sampler-made screen-fixed evidence, by an amount set by each prompt's own guidance.",
+      "vs. MotionCFG [2603.14073]: MotionCFG changes the anchor and keeps one gain, needs an external LLM, and shows a non-monotone response to its window. UnStick-CFG keeps the anchor, needs no LLM, and changes only the gain of one cell.",
+      "vs. DyMoS [2605.19398] and ALG [2506.08456]: both relieve early stasis caused by shared content in I2V, through a conditioning image. DyMoS owns the general principle. UnStick-CFG finds the T2V counterpart inside the text-CFG difference itself, with no reference frame and no attention edit.",
+      "vs. FlowMo, SRVS and SpecLoR [2506.01144][2601.18577][2606.11969]: these optimise coherence and keep or lower motion, at ×1.5–×2.39 cost or extra NFEs. UnStick-CFG targets which coarse candidate wins, at exactly CFG cost, and can be stacked under them."
+    ]
+  },
+  "proposed_evaluation": {
+    "evaluation_setting": "Training-free text-to-video sampling at matched NFE (2 per step, 50 steps). Wan2.1-T2V-1.3B is the primary model; CogVideoX-2B, CogVideoX-5B (offloaded) and LTX-Video are used for transfer and the positional-encoding contrast. Everything runs as single-GPU jobs on 2–4 RTX 3090/4090 (24 GB). The order is pilot first, then the full comparison.\n\n**Pilot (days 1–4).** Generate CFG on ~200 motion prompts × 3 seeds. Pick the 50 lowest-RAFT-flow outputs among prompts that ask for translational motion. Run UnStick-CFG and FDG-along-time on those seeds, together with the attention-level mechanism probe. If prediction (i) fails here, stop and report the negative result.\n\n**Main study (days 5–17).** Run one seed per prompt on the full prompt pool for ten arms, plus the w-sweep, the ablations and the other backbones.\n\n**Evaluation and human study (days 15–21).**\n\n**Compute.** Planning assumption, not a measurement: about 4 min per Wan2.1-1.3B clip with CFG on one 4090, to be timed on day 1. On that assumption the budget is about 11 GPU-days for the main Wan comparison (10 arms × ~410 prompts), 1.5 for pilot and seed mining, 2.2 for the w-sweep, 2.5 for ablations, 2.3 for the other backbones, 0.5 for attention probes, and 2.6 for metric computation: about 23 GPU-days, with about 17 kept in reserve against the 40 GPU-day cap.",
+    "benchmarks": [
+      {
+        "name": "VBench subject-consistency / dynamic-degree prompt suite (~100 prompts; movable COCO subjects with actions) [2311.17982]",
+        "task_type": "text-to-video generation; motion amount, smoothness and consistency",
+        "newly_constructed": false
+      },
+      {
+        "name": "VideoJAM-bench (128 motion-heavy prompts) [2502.02492]",
+        "task_type": "text-to-video generation; motion amount and coherence, human 2AFC",
+        "newly_constructed": false
+      },
+      {
+        "name": "DEVIL stratified subset (100 prompts, 20 per dynamics grade 1–5, including static and low-motion prompts) [2407.01094]",
+        "task_type": "text-to-video generation; whether motion matches the requested dynamics (controllability)",
+        "newly_constructed": false
+      },
+      {
+        "name": "Camera-split subject-motion set: 40 subjects × {'static camera, the subject moves across the frame', 'tracking shot, the camera follows the subject'} = 80 prompts",
+        "task_type": "text-to-video generation; telling screen-space sticking apart from legitimate tracking",
+        "newly_constructed": true
+      },
+      {
+        "name": "Near-static seed pilot set: 50 (prompt, seed) pairs whose CFG output has the lowest RAFT flow among translational-motion prompts",
+        "task_type": "targeted re-generation of failure cases; mechanism probe",
+        "newly_constructed": true
+      }
+    ],
+    "baselines": [
+      "CFG with negative prompt at w = 6 (the backbone default; matched seeds)",
+      "FDG along time: whole coarse band at gain 1 in the same window (the key control) [2506.19713]",
+      "All guidance off in the window, interval-style [2404.07724]",
+      "CFG-Zero* [2503.18886]",
+      "TrajCFG [2610.14153]",
+      "MotionCFG, with Qwen2.5-7B or manual motion-token selection as in the original [2603.14073]",
+      "Training-free RoPE-λ (λ = 0.70, steps 1–5) [2609.23658]",
+      "UnStick-CFG + RoPE-λ (interaction arm)",
+      "UnStick-CFG + TrajCFG with TrajCFG's gains confined to the three gain-w cells (composition arm)",
+      "FlowMo on a 100-prompt subset, only if backpropagation through the 1.3B DiT fits in 24 GB with checkpointing; otherwise reported as not run [2506.01144]"
+    ],
+    "main_metrics": [
+      "Motion amount:\n- RAFT mean flow magnitude [2003.12039]\n- VBench dynamic degree [2311.17982]\n- DEVIL dynamics score and dynamics range [2407.01094]",
+      "Prompt-appropriateness of motion:\n- DEVIL dynamics controllability D_control [2407.01094]\n- flow change on grades 4–5 versus grades 1–2",
+      "Motion quality:\n- VBench motion smoothness [2311.17982]\n- VideoAlign MQ [2501.13918]",
+      "Per-frame quality:\n- VBench imaging and aesthetic quality [2311.17982]\n- HPSv3 averaged over sampled frames [2508.03789]\n- VideoAlign VQ [2501.13918]",
+      "Text alignment:\n- VBench overall consistency (ViCLIP) [2311.17982]\n- VideoAlign TA [2501.13918]",
+      "Guard metrics, read at matched dynamics:\n- VBench subject consistency, background consistency and temporal flickering [2311.17982]\n- DEVIL-style dynamics-binned quality (12 bins; composite of motion smoothness, subject consistency and background consistency, without the Gemini naturalness term) [2407.01094]",
+      "Sticking diagnostics on the camera-split set:\n- sharpness of the subject region in the temporal-average frame (after StyleGAN3's averaged-image test [2106.12423]); subject mask from late-step object-token cross-attention [2609.23658]\n- screen-space subject-centroid travel\n- background RAFT flow outside the mask",
+      "Mechanism:\n- per-step ρ_k and guidance share s_k\n- in steps 1–5, the MC of same-position candidates and the rate at which the winning candidate lies away from the earliest-committed frame's position [2609.23658]",
+      "Human 2AFC, about 150 pairwise judgements: 50 video pairs (UnStick-CFG vs CFG on fixed-camera motion prompts) × 3 raters. Each judgement answers 'amount of motion matches the prompt', 'subject keeps its identity (no vanishing, duplication or morphing)' and overall preference, following VideoJAM's 2AFC protocol [2502.02492].",
+      "Cost: NFE and wall-clock per video for every arm"
+    ],
+    "ablations": [
+      "Shared-coarse gain g_s ∈ {1, (1 + w)/2, w}: dose response; g_s = w is plain CFG",
+      "Window ∈ {steps 1–3, 1–5, 1–8, 1–12}: does the effect track the measured competition window?",
+      "Pyramid depth J ∈ {1, 2, 3}, plus no spatial split (whole frame-shared part at gain 1): is the coarse restriction needed?",
+      "Temporal operator: exact mean vs. a temporal low-pass that also keeps the first harmonic. The low-pass is predicted to hurt, because it removes slow placement change.",
+      "First latent frame included vs. excluded from the mean (Wan-VAE's spatial-only first frame [2503.20314])",
+      "C1-style raise: frame-varying coarse gain a ∈ {1.5w, 2w} with the shared part at w, testing mechanism (b), the alternative to lock-in relief",
+      "History-Guidance/ALG-literal arm: withhold the fine-band frame-shared cell instead [2502.06764][2506.08456]",
+      "w-sweep {3, 4.5, 6, 7.5, 9} for CFG and UnStick-CFG on 100 prompts: is motion monotone in w?",
+      "Backbone transfer: CogVideoX-2B (sinusoidal), CogVideoX-5B (3D-RoPE), LTX-Video (RoPE) vs. Wan2.1-1.3B, with 3 arms each (CFG, UnStick-CFG, FDG along time) on ~150 prompts"
+    ]
+  },
+  "falsifiable_predictions": [
+    {
+      "pillar": "Temporal split vs. spatial-only withholding (the method delta over FDG along time)",
+      "prediction": "On the 50 near-static Wan2.1-1.3B pilot seeds and on the motion prompts of the main pool, UnStick-CFG gives higher RAFT flow and VBench dynamic degree than both CFG and FDG along time at equal NFE. FDG along time behaves like Interval Guidance: no more flow than CFG, and lower alignment.",
+      "kill_condition": "UnStick-CFG's flow and dynamic-degree gain over CFG is no larger than FDG along time's, within seed-bootstrap confidence intervals. UnStick-CFG would then reduce to FDG along time."
+    },
+    {
+      "pillar": "CFG feeds RoPE anchoring (causal account)",
+      "prediction": "In steps 1–5 on the pilot seeds, UnStick-CFG lowers the mutual consistency of same-position candidates and more often selects a winner away from the earliest-committed frame's position than CFG does, with RoPE untouched.",
+      "kill_condition": "MC and winner location are unchanged while flow rises (the gain is not via anchoring), or neither changes (the frame-identical term does not steer the competition)."
+    },
+    {
+      "pillar": "Shared mechanism with RoPE-λ",
+      "prediction": "UnStick-CFG's gain in flow and dynamic degree over its base is smaller when stacked on training-free RoPE-λ than on plain CFG (sub-additive), because both act on anchoring.",
+      "kill_condition": "The gains are additive or super-additive. The two would then act on different mechanisms, and the anchoring account fails."
+    },
+    {
+      "pillar": "Dependence on RoPE distance decay",
+      "prediction": "The gain over CFG is larger on the RoPE backbones (Wan2.1-1.3B, CogVideoX-5B, LTX-Video) than on CogVideoX-2B, which uses sinusoidal absolute positions [2408.06072].",
+      "kill_condition": "CogVideoX-2B shows an equal or larger gain than CogVideoX-5B under the same window and prompts. The effect would then not depend on RoPE anchoring."
+    },
+    {
+      "pillar": "Guidance becomes a motion control",
+      "prediction": "Over w ∈ {3, …, 9}, RAFT flow rises monotonically with w under UnStick-CFG, while under CFG it stays roughly flat. Per-frame quality (HPSv3, imaging quality) is comparable at matched w.",
+      "kill_condition": "UnStick-CFG's flow-versus-w curve is flat or non-monotone like CFG's, or it rises only alongside a drop in per-frame quality larger than CFG's at the same w."
+    },
+    {
+      "pillar": "Prompt-appropriateness (no motion target, so it only frees displaced candidates the prompt implies)",
+      "prediction": "Flow gains concentrate on DEVIL grades 4–5 and on fixed-camera prompts. Grades 1–2 change little, and DEVIL D_control does not fall below CFG.",
+      "kill_condition": "Flow rises as much on grade-1 (static) prompts as on grade-5 prompts, or D_control drops. UnStick-CFG would then be a generic motion or flicker injector rather than relief of lock-in."
+    },
+    {
+      "pillar": "Sticking vs. tracking",
+      "prediction": "On fixed-camera prompts, UnStick-CFG lowers subject sharpness in the temporal-average frame and raises screen-space subject travel. On tracking-shot prompts, background flow is not reduced.",
+      "kill_condition": "The sharpness and travel changes are the same for fixed-camera and tracking prompts, or tracking prompts lose camera motion."
+    },
+    {
+      "pillar": "Appearance-dominance premise and size of the extrapolated term",
+      "prediction": "In steps 1–5, the coarse frame-identical cell holds the largest share ρ_k of the guidance-difference energy, and ρ_k falls after the window. The guidance share s_k of the same-position coarse evidence is substantial.",
+      "kill_condition": "The coarse frame-identical cell is a minority of the guidance energy in steps 1–5, or s_k is small. The withheld term would then be too weak to flip winners, which is the main risk."
+    },
+    {
+      "pillar": "Guards: alignment and object permanence",
+      "prediction": "VideoAlign TA and ViCLIP overall consistency stay within a small margin of CFG and above the guidance-off-in-window arm. Subject consistency at matched dynamics and the human identity judgement are not worse than CFG.",
+      "kill_condition": "The alignment drop matches the guidance-off arm (the Interval-Guidance-like cost seen on Wan2.1-1.3B [2603.14073]), or humans judge identity breaks significantly more often than for CFG (the λ-style instability [2609.23658])."
+    }
+  ],
+  "limitations": [
+    "The core premise is our own untested inference: CFG's extrapolated frame-identical coarse term steers the RoPE-anchored candidate competition. The only in-domain causal test of the guidance difference's static content found that ablating it changed object size, not trajectory, on one successful seed [2609.23658]. Removing early guidance outright lowered FLOW on Wan2.1-1.3B [2603.14073].",
+    "As a method, UnStick-CFG differs little from FDG's general rule applied along time [2506.19713]. The contribution is the causal account and the control arms that test it (FDG along time, the λ interaction, the positional-encoding contrast). DyMoS already owns the general principle that early frame-shared content suppresses motion, in I2V [2605.19398].",
+    "It has no motion target. It can only let the conditional branch's own displaced candidate win, and cannot create a trajectory or a kind of motion the model never proposes [2506.01144][2607.26706]. A truly static model prior is out of reach.",
+    "The window must be set per backbone (watermark-dominated early estimates on CogVideoX [2603.14073]). On CogVideoX-2B, which has no RoPE [2408.06072], our own account predicts little effect, so no unchanged transfer is claimed.",
+    "Withholding part of the prompt's own layout evidence may cost early alignment. Unsticking a subject at commitment risks object-permanence errors like those of training-free RoPE-λ [2609.23658]. Both are measured as guards, not assumed away."
+  ]
+}
