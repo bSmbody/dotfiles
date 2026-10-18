@@ -164,6 +164,20 @@ def _strip_tags(s: str) -> str:
 
 
 def _web_search(q: str, n: int, sort: str, cat: str | None) -> list[dict]:
+    """网页搜索对所有词取 AND，长查询常常零结果；零结果时逐步缩短（保留引号短语，再减普通词）。"""
+    phrases = re.findall(r'"[^"]+"', q)
+    words = [w for w in re.findall(r"[\w\-\+]+", re.sub(r'"[^"]+"', " ", q)) if len(w) > 2]
+    tries = [q] + [" ".join(phrases + words[:k]) for k in (4, 3, 2) if len(words) > k]
+    for qq in dict.fromkeys(t for t in tries if t.strip()):
+        hits = _web_search_once(qq, n, sort, cat)
+        if hits:
+            if qq != q:
+                print(f"（网页搜索零结果，已缩短为：{qq}）")
+            return hits
+    return []
+
+
+def _web_search_once(q: str, n: int, sort: str, cat: str | None) -> list[dict]:
     size = next(s for s in (25, 50, 100, 200) if s >= min(n, 200))
     params = {"query": q, "searchtype": "all", "abstracts": "show", "size": size,
               "order": "-announced_date_first" if sort == "date" else ""}
