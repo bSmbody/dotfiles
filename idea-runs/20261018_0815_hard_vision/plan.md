@@ -3,7 +3,7 @@
 **Goal**: ONE focused, sharp, well-grounded methodological intuition for this problem that a simulated CVPR 2027 panel rates at ≥ 5/10 acceptance odds, executable within the Constraints in problem.md.
 
 **Active direction**: Axis `perceptual blind spots of frontier VLMs that more reasoning does not fix`, Gap 1 — black-box remedies only change what the frontier model receives, while the quantity is still read out by its own encoder-to-language pathway; the readouts that recover it are per-task probes or heads, so no question-conditioned, task-general readout of a small frozen encoder exists that can be handed to a black-box frontier model as answer-bearing evidence.
-**Status**: `under_review`
+**Status**: `drilling`
 
 ## Candidate axes
 - A1 `perceptual blind spots of frontier VLMs that more reasoning does not fix` — done: 2 gaps (no task-general frozen-encoder readout usable as evidence; no training signal on instances every model is blind to)
@@ -13,3 +13,4 @@
 - `forming` at turn 0: added after the user widened the scope beyond embodied; spawning gap_finders on two axes.
 - `drilling` at turn 1: chose A1/Gap 1 — a new capability (general measurement readout as evidence) rather than a routing tweak; A2 gaps become the 'how the frontier model uses it' half. Spawning innovator → C1.
 - `under_review` at turn 2: innovator wrote C1 (new) — the frontier model writes a parametric renderer for the question's quantity; a frozen ≤3B encoder plus TabPFN in-context posterior (simulation-based inference, NPE-PFN [2504.17660]) infers the quantity on the real image without training and returns a calibrated answer distribution as evidence. Spawning reviewer on C1.
+- `drilling` at turn 3: reviewer → C1 `revise(focus=feasibility)`. Novelty judged real (no published frontier-written-renderer + frozen-encoder in-context SBI readout), but render→real transfer is unsupported: on synthetic benchmarks it degenerates into re-writing the benchmark generator; on natural images it falls off the render manifold; PCA-to-low-dim keeps nuisance variance and can drop the quantity; Astra's named gaps (2609.35718) are depth, boundaries, small structures, not BlindTest primitives. Revise cycle 1 → C2: commit to a task family + standard benchmark where transfer is non-trivial yet plausible, cross-generator evaluation, quantity-preserving reduction.
