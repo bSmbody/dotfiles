@@ -83,3 +83,43 @@
     - aspect-preserving uniform tiling;
     - uniform tiling at the depth cap with the same fusion rule;
     - presence-ranked search without the residual gate.
+
+
+### C3 verdict
+
+- **Verdict**: `survive`
+- **Evidence**:
+  - **Source grounding is accurate, with two overreaches.**
+    - [2106.12193]: Hwang's step "Declare the item just found as defective, remove it from the partition, and return to Step (a)" is quoted correctly. A re-test is then positive if and only if another defective remains, and the noisy variants discard declared defectives between rounds. [2008.06642]: dilution and correlated false negatives are stated correctly.
+    - The target-side facts check out: SAM 3's presence token is "solely responsible" for presence on a fixed 1008 square [2511.16719]; ActiveSAM shares τ = 0.1 across benchmarks [2606.16996]; SAM 3 runs on one 24 GB RTX 4090 [2606.21863]; CaR's black-out prompt costs about 5 mIoU (61.8 against 66.0–67.6) [2312.07661]; ZoomEye's all-instance search is exhaustive to depth 2 on unedited crops [2411.16044]; AdaCount enlarges found instances and fails when none is found [2607.02139].
+    - Overreach 1: [2204.08945] covers only global-attention ImageNet classifiers (ViT-T/S). It measures freedom from bias toward the hole, not whether a class is reported absent once its evidence tokens are dropped. SAM 3's encoder uses 3×3 windowed attention with global attention in 4 of 32 layers, followed by a fusion encoder and a DETR decoder [2511.16719]. "Dropping tokens" there means attention masking in every stage, which no read paper tests.
+    - Overreach 2: in [2003.07080] the secondary R-CNN is trained only on the instances the first round missed. Its recall gain (0.82→0.92) and the "erasing plus finer resolution" result therefore do not support C3's key assumption for a frozen model.
+  - **Novelty: erase-and-re-ask is an in-domain principle, but the stated delta is real.**
+    - Adversarial Erasing [1703.08448] (CVPR 2017, not cited by C3) erases what the classifier has mined and asks it again. Erasing one cow "another two instances on the left side are then discovered". PS-RCNN [2003.07080] does the same for crowds. Both retrain the model that takes the second look.
+    - Searches found no training-free method that tests a frozen model on crops with the already-labelled segments removed and uses the answer to gate zoom. Queries covered erasing or masking detected objects, iterative masking for open-vocabulary detection, SAM 3 OVSS / training-free / tiling, zoom-in OVSS, adaptive or quadtree zoom segmentation and SAHI, with a 2025-10 recency pass.
+    - The nearest gated-slicing work, ROI-Gated SAHI [2608.23923], gates where a coarse detector already found objects, which is the opposite of a residual. It loses accuracy (mAP@0.5 0.660 against 0.757 for full SAHI) for a 1.02× average speed-up, and gating pays off only in sparse scenes.
+    - So C3's delta is the residual trigger on a frozen open-vocabulary recogniser plus per-pixel authority fusion. Group testing supplies the reason the found items must leave the pool. The write-up must cite AE and present C3 as the training-free, frozen-model, zoom-gating form of erase-and-re-ask.
+  - **The mapping now holds: it is a real OR over defectives.** Items are locations, defectives are "present but unlabelled", declared defectives are labelled segments, a pool is a crop, and the test is presence on the crop with those segments removed. A crop whose instances are all labelled now tests negative, which resolves C2's objection. Two slips remain:
+    - *The cost unit is a crop shared by every tested concept.* A crop is split if any tested concept is positive, so it retires only when all of them are negative.
+      - C3 does not say which concepts are tested in a crop. Even restricted to ActiveSAM's admitted set, the preview keeps 18.0 prompts per Cityscapes image and 30.8 per ADE20K image [2606.16996].
+      - The sparsity cited (40% of instances, 0.3% of area [1812.01600]) is sparsity of area per concept, not the fraction of crops free of every unexplained concept. On dense street and indoor scenes the k·log2(n/k) saving therefore does not carry over (my estimate). This is C1's objection in a weaker form.
+      - Under the per-image budget C3 is a ranked search. Its claim must be accuracy at matched compute against baselines (ii) and (iii), not group-testing efficiency.
+    - *Removal margin, strict guard and one shared mask.* C3 removes found segments of all tested concepts in one pass, with a one-token margin, and drops any decoded segment that overlaps the removed area.
+      - This hides and then discards missed instances that touch found ones: a sign on a found pole, a light on its mast, an occluded pedestrian beside a found one. The occluded, overlapping people are exactly where PS-RCNN's gain came from [2003.07080].
+      - It also contradicts C3's own claim that "wholly missed pieces of partly found ones" are added, since those pieces border the removed area.
+      - This can be fixed at method level, for example with a guard based on overlap fraction and with instance-shaped removal per concept. PS-RCNN warns, though, that masks which leave part of a found instance visible cause duplicates, so the report must resolve this trade-off.
+  - **Transfer: the key assumption is named and plausible, but only one of its two failure directions is stated.** C3's main risk is the false negative: missed instances too weak for presence. The unstated opposite is that residual presence answers from context.
+    - AE: once "most object regions are removed ... the classification network has to rely on some contextual regions to recognize the categories" [1703.08448].
+    - SAM 3's presence is built to use "contextual cues from the entire image" [2511.16719], and C3 deliberately adopts the lenient τ = 0.1 [2606.16996].
+    - So in a street crop with its found poles removed, "pole" may stay positive from context alone. The gate then neither localises nor prunes.
+    - Counter-evidence: SAM 3 is trained with hard negatives [2511.16719], and SegEarth-OV3's per-window presence "effectively eliminates localized false positives" [2512.08730]. Crop-level presence can therefore reject absent classes. Whether it rejects a class whose instances have all been removed is unmeasured.
+    - This is cheap to settle before full experiments (my suggestion). On Cityscapes val, run ActiveSAM, remove its found segments, and compute residual presence on root tiles and quadrants. Report AUROC against ground truth "crop holds an unlabelled instance of c", broken down by class and size and compared with unmasked presence. The pilot costs under one GPU-day.
+  - **Contribution type and feasibility pass.** C3 is an inference-time algorithm on frozen SAM 3 (about 850M parameters; one 24 GB RTX 4090 [2606.21863]). Its worst case is bounded by uniform tiling at the depth cap, so it fits the 40 GPU-day budget.
+  - **Significance caution.** The fusion rule confines gains to wholly missed segments, so the mIoU effect may be small. The aspect-preserving roots, baseline (i), may account for most of the Cityscapes gain. The paper must lead with recovery rate and small-segment recall per class, and must show a gap over baseline (iii).
+- **Strongest objection in 1 sentence**: The residual test assumes that a frozen presence head says "no" once a concept's found segments are removed unless an unexplained instance remains, but the only erase-and-re-ask precedents (AE [1703.08448], PS-RCNN [2003.07080]) retrain the second look, AE reports that over-erased images are recognised "from contextual regions", and SAM 3's presence is built on whole-image context and used at a lenient τ = 0.1, so if residual presence stays positive from street or room context, and a crop retires only when all its tested concepts are negative, the gate neither localises nor prunes and C3 collapses into uniform tiling with the same fusion (baseline ii).
+- **What the report must carry**:
+  - A go/no-go pilot: AUROC of residual presence against "crop holds an unlabelled instance", compared with unmasked presence.
+  - Which concepts are tested per crop, and the claim framed as accuracy at matched compute, not k·log2(n/k) efficiency.
+  - A re-detection guard and removal rule that do not discard missed instances touching found ones.
+  - AE cited as the in-domain erase-and-re-ask precedent, and ROI-Gated SAHI as gated slicing.
+  - Baselines (i)–(iii) as already named.
