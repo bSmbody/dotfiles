@@ -259,3 +259,103 @@
   - first measured on a standard non-paused benchmark with a frontier brain, with the latency penalty split into which-object vs when errors.
 
 **Main risk** On DOM's perception sub-dimensions the speculator may agree with the brain so often, or the candidates' windows may overlap so rarely, that hedged pursuit ties speculate-top-1. The method would then shrink to "speculate and switch", and the contribution to the discovery plus the certifier. A 100-trial pilot on VU and SR settles this.
+
+
+
+### C4 — Hedge on what the slow brain will say: reveal-time-aware hindsight optimization over moving targets
+
+**Intuition** While a slow frontier brain decides which moving object the instruction means, a fast local model predicts the brain's answer as a probability over the objects. The arm then moves so that the likely answers are still catchable *at the moment the answer will land*, not at the current moment. This is Hindsight-Optimization shared autonomy [1503.07619] with the human replaced by a slow semantic oracle. The oracle's answer arrives after a measured, random delay, and each candidate's catchable window closes while it is pending.
+
+**Gap it attacks**
+- **Primary: axis "latency of frontier-model brains", gap 1, narrowed to its in-call half.** In real time, a black-box brain's target choice is applied to a world that kept moving during the call. Today the executor either idles until the answer comes (DOM's evaluator holds the home pose [2601.22153]; frontier-brain systems pause the world [2610.28259, 2610.14117]) or commits to one fast guess and is overridden later [2607.05482]. Both lose targets whose windows close during the call.
+- **Secondary: axis "execution monitoring", gap 2 (an escalation rule that ignores latency).** The value of waiting for the brain is computed against the measured latency distribution and each candidate's remaining window. This is the latency-dependent rule that gap says is missing.
+- **Why it matters.** RT-Safe found ~84% of real-time VLM-agent collisions happen while the agent idles during inference [2610.09294]. A seconds-latency brain is unusable on moving objects until in-call behaviour is fixed, whatever the quality of its decisions.
+
+**If improving prior candidate** C3. Every item of the C3 verdict, including its evidence addendum:
+- **(i) "Right-but-late" is dropped as a contribution.** The brain is queried at motion onset on the t0 frame, and DOM fixes the referent from the t0 states [2601.22153]. Its answer is therefore the same for every Δ by construction. C4 makes no claim about which-object versus when errors. Caching the t0 answer across Δ is kept only because, for that reason, it is a valid way to compare executors. A 200-trial live-call subset measures the latency distribution the method needs and checks API nondeterminism, nothing more.
+- **(ii) The brain is made necessary on a standard-derived condition, and gated by a pilot.**
+  - *DOM-Sem* keeps DOM's scenes, trials, physics, speed and friction ranges, and demonstrator. Only the instruction changes, and only on DOM's multi-object VU/SR/MP environments. The referent is named through knowledge about DOM's 16 object categories, never through the category word [2601.22153, digest]. Three families: superordinate or function ("something you could squeeze juice from"); exclusion composed with a table attribute ("the slower fruit that is not a citrus"); and commonsense consequences ("the one that would break if it hit the floor", "the one you'd need a bottle opener for").
+  - Ground truth comes from a 16-row hand-labelled attribute sheet. Only target and distractor draws with a unique answer are kept. If an environment holds fewer than three objects, it is regenerated with DOM's released generator at four objects, same ranges, and the specifications are released.
+  - The tracker table given to every arm is class-agnostic (IDs, positions, velocities, sizes), as from a class-agnostic video tracker. The category must therefore be read from pixels.
+  - New arms: **script-only** (a rule parser over DOM's tag grammar and the table; for semantic words it picks uniformly among objects that satisfy the kinematic part) and **speculator-only** (the 8B VLM's top-1, acting at once, no brain). A **privileged-label script** (ground-truth categories plus the attribute sheet) is reported as a reference row. It resolves DOM-Sem perfectly, which states plainly that the brain is needed only because category and knowledge must come from pixels and open-vocabulary text.
+  - **Gate (pilot, 100 trials per family).** Hedge effect sizes are committed only on families where the brain's referent accuracy is at least 15 points above the speculator's, the speculator's top-1 agreement with the brain is at most 0.8, and its top-3 agreement is at least 0.15 above its top-1. Other families are reported without commitment.
+  - DOM's own SR and MP instructions, which are table-computable, become negative controls. Single-object CR is a third.
+- **(iii) Positioning.**
+  - The hedge itself is [1503.07619], in its physical-interception form [2512.01108].
+  - The fast-first action is [2607.05482].
+  - Keeping options feasible over a latency bound is [2407.08735].
+  - The shared prefix over moving candidates is [2610.17003].
+  - The residual delta is stated under Novelty.
+- **(iv) Uniform-hedge and centroid baselines are added, along with a next-step-reveal hindsight-optimization arm.** The last isolates the one ingredient that is new beyond the belief source. Commitments and falsifiers are below.
+
+**Source inspiration** Novelty type: reinforcing a weak connection (goal-uncertainty hedging from shared autonomy and interception, carried to the latency of a slow semantic model).
+- **Hindsight-Optimization shared autonomy [1503.07619].**
+  - Mechanism: the robot does not wait for the authoritative agent's goal. It picks the action minimizing the belief-weighted sum of per-goal costs-to-go, so "when the system is able to make progress for all goals, it does so automatically". This beats predict-then-blend (assist only toward the most likely goal) on completion time [Sec I, V, VII-C].
+  - Assumptions: static goals, deterministic dynamics, and the QMDP simplification that the goal is revealed at the next step [Sec V, VI-A].
+- **Think Fast [2512.01108].**
+  - The same expected-value hedge in physical interception, under a belief over one target's future state. It reaches 74% vs 63% for moving to the most likely goal at each update.
+  - Its main failure is the arm being too far away when the estimate settles [Sec V-C, VI–VII]. That is exactly the failure a hedge against a closing window addresses.
+- **Deferred-decision trajectory optimization [2610.17003]** (one branch per moving candidate, a shared applied control, a fallback toward a retained candidate) and **AESOP [2407.08735]** (options kept jointly feasible for K = 4.3 s, the 95th percentile of measured LLM latency) supply the reveal-time discipline: plan for the moment the slow answer is known, taken from its measured latency distribution.
+- **Speculative Actions [2510.04371]** supplies the belief source: a fast model that guesses a slow authoritative actor's next action, where top-3 coverage far exceeds top-1. It also supplies the warning that motivates hedging rather than committing: with irreversible effects, "naive speculation is harmful" [Sec 2].
+
+**How it maps to this problem**
+- **Roles.**
+  - [1503.07619]'s user is the frontier brain (Astra), shown SoM marks on the objects' current pixels [2310.11441] plus the class-agnostic table.
+  - The goal belief is a local open VLM of at most 8B on the same prompt, returning confidences over object IDs.
+  - The per-goal cost-to-go is the scripted catchability certifier from C3: for each candidate, the time window in which the arm could intercept it, given the live track and the arm's speed bounds.
+  - The goal reveal is the brain's answer.
+- **The one change to hindsight optimization: value at reveal, not at the next step.** An in-call waypoint is scored by the belief-weighted chance that each candidate is still catchable *from that waypoint when the answer lands*. The chance is averaged over the brain's measured latency distribution, not computed for an immediate reveal. A candidate whose window will close before the answer can arrive gets no hedge weight, however close it is now. A candidate that is far now but will still be in range at reveal does get weight. The next-step-reveal version [1503.07619] does the opposite in both cases, and it is kept as an ablation.
+- **The belief is a model of the brain, not of the truth.** The speculator's confidences are calibrated against the brain's own answers on held-out pilot trials (cross-fitted), so the belief includes the brain's own mistakes. What matters is whether the object the brain will name is catchable, not whether it is the correct object.
+- **At reveal.** The brain's ID is bound to the tracked object, and DOM's released demonstrator intercepts it [2601.22153]. If that object is no longer catchable, the trial fails: the executor never substitutes a different object for the brain's choice.
+- **One mechanism, the rest plumbing.** The single mechanism is the reveal-time-aware, oracle-model-weighted hedge. The speculator, calibration, certifier, tracker (simulator ground truth) and demonstrator are plumbing.
+
+**Why it could work / feasibility**
+- **Why the hedge should help (from the sources).** Hedging beats commit-to-most-likely when windows are tight and the goal is uncertain: about 11 points in hardware interception [2512.01108], and faster completion in shared autonomy [1503.07619]. Speculative Actions shows a fast model's top-3 covers a slow actor's answer much more often than its top-1 [2510.04371]. That coverage gap is what the hedge spends.
+- **When weighting beats uniform hedging, and when it cannot.**
+  - Weighting beats uniform only on *contested* trials, where the certifier says not all plausible candidates can be kept catchable through the answer's arrival.
+  - Weighting beats commit-top-1 only when the speculator is genuinely unsure.
+  - The pilot measures both. Their absence on DOM's SR/MP referents, which are table-computable, was C3's coherence failure, so those referents are now the negative control.
+- **Why the brain plausibly beats an 8B speculator on DOM-Sem, and why this is only plausible.**
+  - On knowledge-laden referring expressions, Qwen2.5-VL-7B resolves the referent in text 40.8% of the time, against 89.1% for Gemini 2.5 Pro [2508.14080, Table 1].
+  - Those expressions are multi-hop person-entity knowledge, though. Household commonsense over 16 categories, read from small 480×360 texture-augmented renders [2601.22153], may show a much smaller gap.
+  - The gate in (ii) decides, before any commitment.
+- **Released and runnable.**
+  - DOM's non-paused evaluator and Warp demonstrator are released [2601.22153, digest], and RAVEL ran DOM non-paused on an RTX 4090 [2609.34170].
+  - Engineering: about 3 days for the certifier, 1 day for the DOM-Sem instruction generator (16-row sheet, templates, a hand check of 200 instructions), 2 days for the brain client, and 1 day for the speculator and calibration.
+  - The pilot is done by day 7 and the main runs on days 8–13, inside the 2026-11-09 limit. Nothing is trained.
+- **Load.**
+  - Trials: 3 DOM-Sem families plus 3 controls (SR, MP, CR) at 200 trials each, 1,200 in total.
+  - Arms (9): paused upper bound; brain-wait; script-only; speculator-only; speculate-top-1-then-switch [2607.05482]; centroid pre-positioning; uniform hedge [2407.08735, 2610.17003]; next-step-reveal HO [1503.07619]; ours.
+  - Injected latencies: 0, 2, 4 and 8 s.
+  - That is about 43k episodes of roughly 12 s, about 145 h of real-time simulation, or about 6 GPU-days on 4 cards. This is well under the 40 GPU-day cap.
+- **API cost.** Both brain and speculator see only the t0 frame, so both answers are cached per trial. That makes 1,200 main calls, 300 pilot calls and 200 live calls, about 1,700 calls. At ≤ $0.14 per call under Astra list prices [2610.01939], that is ≤ $240, with the per-call cost measured in the pilot.
+- **Committed effect sizes.** They apply at Δ = 4 s, on gated DOM-Sem families only. Every gap is tied to pilot-measured quantities, so the commitments stay consistent with each family's speculator accuracy. P is paused success and W is brain-wait success.
+  - Ours recovers ≥ 50% of P − W.
+  - Ours beats speculator-only by at least half of (brain accuracy − speculator accuracy) × P. The brain is needed exactly to that extent, and no more is claimed.
+  - Ours beats speculate-top-1-then-switch by at least half of (top-3 agreement − top-1 agreement) × (P − W).
+  - Ours beats the uniform hedge and centroid pre-positioning by ≥ 8 points on contested trials, ≥ 3 overall, and ties them within ±3 on uncontested trials.
+  - Ours beats next-step-reveal HO by ≥ 5 points on contested trials at Δ = 8 s, and ties it within ±3 at Δ ≤ 2 s, where the two coincide.
+  - Worked example: brain 0.90, speculator 0.65, top-1 agreement 0.65, top-3 agreement 0.90, P = 0.70, W = 0.30. That gives ≥ 9 points over speculator-only and ≥ 5 over top-1-then-switch.
+- **Negative controls (commitments of equality).**
+  - On SR and MP, script-only is within 3 points of the brain's paused accuracy, and ours is within ±3 of speculator-only and of top-1-then-switch. No brain-needed claim is made there.
+  - On CR, all hedging arms are within ±3 of one another.
+- **What falsifies the claim.**
+  - No DOM-Sem family passes the gate: within DOM's object world the brain is not needed, and the line stops.
+  - Ours beats the uniform hedge by < 3 points on contested trials: the speculator weighting adds nothing, and the result reduces to "do not idle", an AESOP/DDTO transfer.
+  - Ours beats next-step-reveal HO by < 3 points at Δ = 8 s: the reveal-time term adds nothing, and the method is [1503.07619] with a VLM belief.
+
+**Novelty vs. closest in-domain work**
+- **Closest:** [1503.07619] (the belief-weighted hedge) and [2512.01108] (the same hedge in physical interception, 74 vs 63%).
+- **The residual delta, stated precisely:**
+  - The belief is a calibrated model of a *slow semantic oracle's answer*, not of a human's motion-revealed intent [1503.07619] or a target's Kalman state [2512.01108].
+  - The goal's *identity* is revealed at once, at a time drawn from a *measured latency distribution*, not at the next step [1503.07619] or gradually through observations [2512.01108].
+  - The goals are *moving objects whose catchable windows close* while the reveal is pending.
+- **Others:**
+  - [2607.05482] runs a fast model's action while slow LLM planners deliberate (matching the eventual plan ~60% of the time), with no hedge, no feasibility check and static scenes.
+  - [2508.06095] acts on a partial instruction but resolves ambiguity "randomly" and replans, in static scenes.
+  - [2407.08735] keeps a fixed set of interventions all feasible, which closing windows make impossible here.
+  - [2610.17003] reveals identity through repeated sensor queries to an optimizer.
+  - [2510.04371] assumes reversible side effects.
+- **Plain size assessment.** The mechanism is known. C4 adds a belief source, a reveal-time term and a standard-derived semantic condition. If both "beats" in the falsifiers (over uniform and over next-step-reveal) come in at their committed sizes, this is a clean but narrow systems result. It is at the edge of a CVPR main-track contribution and more natural for RA-L, ICRA or CoRL. If either comes in small, it is not a CVPR paper, and it should not be presented as one.
+
+**Main risk** On DOM-Sem the 8B speculator may read DOM's 16 categories and their commonsense attributes almost as well as Astra. The texture-augmented renders may also defeat both models. Either way the gate fails or there is little uncertainty to hedge, and the work collapses to "leave home early", which is uniform hedging.
