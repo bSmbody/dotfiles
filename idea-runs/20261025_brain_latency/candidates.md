@@ -144,3 +144,118 @@
 - **Decisive ablation:** query-time marks plus motion trails plus Δ in text, with ReKep-style late binding [2409.01652, 2610.09294]. A second variant asks that prompt for a free-form fallback, to separate executor certification from the contingent answer form.
 
 **Main risk** On time-rescaled DOM, decision-relevant forks may be rare, or a trails-plus-Δ prompt with a free-form fallback may handle them well. The gain would then shrink to executor-certified reachability alone. A pilot measuring the which-decision error rate of that baseline on Long-horizon Sequencing and Dynamic Adaptation settles this before the main runs.
+
+
+
+### C3 — Latency is a "when" problem: speculate the brain's answer the way interceptors defer a target choice
+
+**Intuition** In real-time dynamic manipulation, a slow brain mostly picks the *right* object. It just names it after the object has rolled out of reach. So the executor should not wait. While the brain thinks, it moves along the path that keeps the objects the brain is most likely to name still catchable when the answer lands. A fast local model guesses those likely answers, and a scripted check certifies which objects remain catchable. When the brain's answer arrives, the executor commits to the named object.
+
+**Gap it attacks**
+- **Primary: axis "latency of frontier-model brains", gap 1.** That gap says the brain's choice is made about a state that no longer exists. C3 first measures what this actually costs on a standard non-paused benchmark. It separates a wrong choice from a right choice that arrives too late. It then fixes the dominant part.
+  - Prediction from the released DOM code: in DOM, latency barely changes *which* object the brain names, but it fully decides *whether that object is still catchable* when the name arrives.
+  - The released evaluator holds the arm at its home pose until an action arrives [2601.22153, digest]. Every second of brain latency is therefore a second the target spends rolling away.
+- **Secondary: axis "execution monitoring", gap 2 (the escalation rule is blind to latency).** The certifier compares each candidate's remaining catchable window with the brain's measured latency. It is the missing rule "this choice cannot wait for the brain; that one can".
+- **Why it matters.**
+  - RT-Safe found that about 84% of real-time collisions of VLM agents happen while the agent idles during inference [2610.09294].
+  - Frontier-brain manipulation systems pause the world [2610.28259, 2610.14117].
+  - Until in-call behaviour is fixed, a seconds-latency brain cannot be used on moving objects at all, however good its decisions are.
+
+**If improving prior candidate** C2. Route chosen: **discovery + method**, because the checks below show that C2's contingent answer cannot beat the reviewer's ranked-list baseline on DOM except under hand-built conditions.
+- **Checked against DOM's released code, not its prose [2601.22153, digest].**
+  - Instruction tags (category, height, area, position, distance to robot, velocity) are computed once, from the *initial* object states. The referent of every single-object task is therefore fixed at t0.
+  - The long-horizon task's tag is "entire set of objects", with fastest-first order, so order carries no instruction semantics.
+  - So no DOM task has an instruction keyed to a motion outcome, and no new arrival can outrank the target. The preferred action changes with the realized future only through reachability. That is exactly where a ranked list gated at arrival matches the contingent form ([2204.01691]-style gating).
+- **Reviewer points.**
+  - **(i) Positioning against AESOP [2407.08735].** AESOP already branches over the brain's possible *answers* inside the executor, keeping all of them feasible for K steps, with K set from the 95th percentile of measured latency.
+    - C2's claimed delta, branches over world futures inside the brain's answer, is dropped. On DOM it has nothing to act on.
+    - C3 keeps AESOP's principle. It extends it to the case AESOP cannot handle: the options are moving targets whose catchable windows close at different times, so they cannot all be kept feasible.
+  - **(ii) The ranked-list baseline.** It is now a measured arm of the discovery, along with the C2 contingent prompt. The prediction is that they tie (see effect sizes).
+  - **(iii) Deterministic vs exogenous forks.**
+    - Straight, curved and collision-deflected rolls are deterministic physics. The certifier gives them a point forecast fitted to the live track.
+    - Scripted pushes and collisions (DR) and the force/torque perturbation events are exogenous. They get a tolerance band plus re-solving on the live track at 10 Hz.
+    - No hypotheses are shown to the brain.
+  - **(iv) Effect sizes:** committed below.
+  - **(v) Release and cost:** verified below.
+  - **(vi) Certifier:** specified below as new engineering.
+- **Kept from earlier verdicts.**
+  - Identity marks sit only on objects' current pixels, which is SoM's tested regime [2310.11441]. No ghosts are drawn.
+  - Late binding is built in, because the released demonstrator tracks the live pose [2601.22153]. This covers ReKep-style binding [2409.01652].
+  - The trails-plus-Δ prompt remains a brain-prompt arm.
+
+**Source inspiration** Novelty type: recombination of distant concepts (speculative execution from computer architecture and agent systems, plus deferred-decision interception from aerospace control).
+- **Speculative Actions [2510.04371].** While a slow, authoritative actor (a frontier LLM) computes, a fast speculator guesses its top-k next actions. Their consequences are pre-launched, and a branch is committed only if it matches.
+  - Top-3 beats top-1 by a wide margin (54.7% hit rate in chess, "significantly" higher accuracy on HotpotQA).
+  - The scheme is lossless only under Assumption 2: wrong guesses have no side effects or can be rolled back. Physical, irreversible effects are named as the case where "naive speculation is harmful" [2510.04371, Sec 2–3].
+- **Deferred-decision trajectory optimization for moving candidates [2610.17003].** It handles the case speculation cannot.
+  - "Committing too early can direct an agent toward a non-target, whereas excessive deferral can leave insufficient time or control authority for capture."
+  - Its answer is one branch per candidate. All branches share the applied control and separate as late as feasibility allows. When no branch can be verified, it falls back to guidance toward a candidate still in play [2610.17003, Sec I, III-C].
+  - The identity there comes from repeated queries to a sensor, and the decision-maker is an optimizer.
+- **Why the two combine.** Physical pursuit violates exactly Speculative Actions' Assumption 2: a wrong speculative pursuit spends the reachability the right answer needs. DDTO is the principled form of speculation when the side effects are irreversible.
+
+**How it maps to this problem**
+- **Roles.**
+  - Actor: the frontier brain (Astra). Given SoM marks and the tracker's table (IDs, positions, velocities), it names the target and the container.
+  - Speculator: a local open VLM of at most 8B on the same prompt, returning top-3 IDs with confidences in under a second.
+  - DDTO's candidates: the speculator's top-k objects.
+  - The moment of identity revelation: the brain's answer, at a latency measured online.
+  - DDTO's shared prefix: what the arm does during the call.
+- **The certifier (new engineering, scripted, CPU only).** For each candidate it forecasts the object's track and computes the time window in which the arm could grasp it.
+  - Inputs:
+    - the live 25 Hz track;
+    - a point forecast (constant velocity with friction deceleration fitted on the last 0.5 s, plus specular reflection off known container and table edges);
+    - the demonstrator's own reach rule (0.75 m);
+    - an end-effector speed and acceleration bound measured from demonstrator logs.
+  - Exogenous pushes are not forecast. Re-solving at 10 Hz absorbs them, and a tolerance band set from pilot forecast residuals at horizon Δ, in the spirit of DDTO's conformal regions, keeps the window conservative.
+  - It is validated offline by replaying DOM test trials and checking its "catchable" verdicts against the demonstrator's actual outcomes.
+- **During the call.**
+  - Among about 30 candidate end-effector waypoints, the executor drives toward the one that maximizes the speculator-weighted probability that the brain's eventual choice is catchable when the answer arrives. The arrival time is taken at the 90th percentile of measured latency, following AESOP.
+  - If only one candidate is catchable, the executor simply speculates on it. If none is, it holds.
+- **At arrival.** The brain's ID is bound to the tracked object, and the released demonstrator intercepts it.
+  - If the named object is no longer catchable, the executor takes the catchable candidate the speculator ranks highest, following DDTO's fallback.
+  - If the speculator ranked the brain's choice outside its top-k, the executor still switches whenever the certifier says that object is catchable.
+- **One mechanism, the rest plumbing.** The single mechanism is in-call pursuit that keeps the brain's likely answers catchable, weighted by a speculator. The speculator, certifier, tracker (simulator ground truth) and demonstrator are plumbing.
+
+**Why it could work / feasibility**
+- **Why waiting fails in DOM.** Speeds are 0.15–0.75 m/s and reach is 0.75 m, so a moving object stays in reach for roughly 2–10 s. A 4 s call therefore loses most fast objects before the answer. Calls range from 3.1 s for GPT-3.5 [2407.08735] up to 31–105 s for frontier proposals in SCBT [2610.25455].
+- **Why hedging recovers it.**
+  - The speculator's top-3 covers the brain's answer far more often than its top-1 [2510.04371].
+  - Holding several candidates reachable through a shared prefix is DDTO's validated move [2610.17003].
+  - DOM's arm dynamics are scripted and known, which is the assumption DDTO needs.
+- **Released and runnable (verified in code).**
+  - DynamicVLA/DOM released training and testing code on 2026-04-26. The evaluator `simulations/evaluate.py` is non-paused (non-blocking action receive, hold-last-action, wall-clock pacing). The demonstrator is released as `simulations/state_machines/pick_sm.py` and `place_sm.py`, but it gates only on the *current* distance, so the window certifier above is new [2601.22153, digest].
+  - RAVEL ran DOM non-paused on an RTX 4090 [2609.34170].
+  - Simulation load: 6 sub-dimensions × 200 trials × about 25 method-and-latency configurations × about 15 s each, about 31 h of real-time simulation on 4 GPUs. This is well under the 40 GPU-day cap. Engineering is about 3 days for the certifier, 2 days for the brain client, and no training.
+- **API cost, grounded.**
+  - Astra list prices are $10/M input, $1/M cached input and $50/M output including reasoning [2610.01939, App E].
+  - One grounding call is about 1.5k cached system tokens, at most 6k fresh tokens (three 480×360 images plus the table) and at most 1.5k output tokens, about $0.14 at the upper bound. This is cross-checked against CALL's ~5k Astra tokens per LIBERO episode [2610.14117] and measured in the pilot.
+  - DOM reuses each trial's initial state identically across methods [2601.22153], so one Astra answer per trial and prompt type is cached and replayed at every injected latency Δ ∈ {0, 1, 2, 4, 8} s and for every executor arm.
+  - Three prompt types (single ID, ranked list, contingent) × 1,200 trials, plus about 600 non-cacheable re-asks and a 300-call pilot, is about 4,500 calls, or $450–630.
+  - A 200-trial live-latency subset checks that replay matches live calls. All of this fits the ≈US$1,000 budget.
+- **Committed effect sizes.** P is the paused-world success of brain + demonstrator per sub-dimension.
+  - **Discovery, Δ = 4 s, moving-object trials:**
+    - waiting for the brain keeps ≤ 0.5·P;
+    - ≥ 80% of lost trials are late-but-right (the brain's ID equals its paused answer);
+    - latency-induced wrong IDs are ≤ 5% of trials;
+    - ranked-list-plus-arrival-gate and the contingent prompt each land within ±3 points of brain-wait.
+  - **Method, Δ = 4 s:**
+    - hedged pursuit recovers ≥ 60% of the brain-wait loss on VU/SR/MP;
+    - it beats speculate-top-1-then-switch by ≥ 8 points on VU and SR;
+    - it beats speculator-only, with no brain, by ≥ 10 points on VU;
+    - it ties within ±3 on Closed-loop Reactivity (one object, nothing to hedge), the negative control.
+  - **Cost:** no brain call is made when at most one candidate is certified catchable, which should cut calls by ≥ 30% at ≤ 2 points of success.
+  - Falsifier: if wrong-ID errors exceed 15% of trials, the discovery refutes C3's premise and points back to C1/C2.
+- **Key assumption.** The speculator's top-3 usually contains the brain's answer, and DOM scenes usually hold two or three candidates with overlapping catchable windows.
+
+**Novelty vs. closest in-domain work**
+- **Prior parts:**
+  - AESOP [2407.08735] keeps the brain's possible answers jointly feasible during its latency, but over d fixed interventions with static anomalies, where all options can be kept.
+  - SIGMA [2610.09520] keeps the local planner driving and checks the cloud answer's validity on arrival.
+  - AgenticCache [2604.24039] executes cached symbolic plans and confirms or replaces them when the late LLM answer comes.
+  - Speculative Actions [2510.04371] requires reversible side effects.
+  - DDTO [2610.17003] has no slow semantic oracle.
+- **Delta:**
+  - speculation whose side effects are physical and irreversible, made safe by DDTO-style deferral among *moving* candidates whose windows close during the brain's own latency, weighted by a speculator's prediction of the brain's answer;
+  - first measured on a standard non-paused benchmark with a frontier brain, with the latency penalty split into which-object vs when errors.
+
+**Main risk** On DOM's perception sub-dimensions the speculator may agree with the brain so often, or the candidates' windows may overlap so rarely, that hedged pursuit ties speculate-top-1. The method would then shrink to "speculate and switch", and the contribution to the discovery plus the certifier. A 100-trial pilot on VU and SR settles this.
