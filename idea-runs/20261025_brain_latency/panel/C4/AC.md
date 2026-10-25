@@ -1,0 +1,62 @@
+# AC meta-review: C4, "Hedging on What the Slow Brain Will Say: Belief-Weighted Answer-Branching for Moving Targets under Seconds-Scale VLM Latency"
+
+**Panel:** R1 2/4 (p_core 0.30), R2 2/4 (p_core 0.30), R3 2/4 (p_core 0.35). Two reviewers mark a [fatal] weakness and the third (R3) makes the same point under [major]. The reviews agree with each other, and I agree with all three on the decisive points.
+
+## Summary of the submission
+A frozen GPT-6 Astra decides which of several rolling DOM objects an instruction refers to, and the answer takes seconds. During the call a scripted 10 Hz greedy waypoint policy moves the arm. It picks the waypoint that maximises the belief-weighted probability that the brain's eventual answer is catchable at a reveal time drawn from the measured latency posterior. The belief is a temperature-scaled Qwen2.5-VL-7B prediction of the brain's answer. No model is trained, and every committed effect is on a self-built DOM-Sem condition behind a pilot gate.
+
+## Decisive strengths
+- **A real blind spot, stated precisely.** Recent frontier-brain manipulation systems (GPT-GEAR, CALL, PyRUA-Lean) pause the world or idle the executor during the call, and RT-Safe shows that real-time failures concentrate in that idle time. All three reviewers accept this. I accept it too.
+- **Unusually clean experimental logic.** The cached t0 answer is replayed across latencies, the post-reveal executor is held fixed, there is a pre-registered pilot gate, there are SR/MP/CR negative controls, and each claimed ingredient (belief source, value horizon) has a matched ablation. Kill conditions are honest. The authors themselves say the delta is narrow and fits RA-L/CoRL.
+- **Cheap and within constraints:** about 15 GPU-days and about $410 of API spend.
+
+## Decisive weaknesses
+1. **At threshold, the paper's own contribution is thin and statistically unresolvable** (R1 fatal, R2 fatal, R3 major). I accept this and treat it as an unresolved fatal weakness.
+   - Most of P3 (recovering ≥50% of P−W) is "do not idle", which the uniform hedge and centroid baselines (AESOP/DDTO transfers) will largely capture.
+   - The novel parts commit only +8 points on contested trials and +3 overall over the uniform hedge (P4), and +5 over next-step HO in a hand-slowed band at 8 s (P5).
+   - With about 30 contested trials per gated cell, +8 points is within roughly one standard error. R3's consistency check is decisive: +8 on contested × 0.15 contested fraction + a tie on uncontested ≈ +1.2 overall, not +3. Read consistently at threshold, the headline novel effect lies inside noise.
+   - No statistical test, confidence interval or equivalence margin is specified. The ±3-point "ties" on n = 200 are underpowered rather than shown.
+2. **CVPR fit is poor** (R2 fatal; R1 and R3 major). Nothing visual is new: tracks are simulator ground truth, the executor is a scripted state machine, the motion predictor is constant velocity, and vision enters only through off-the-shelf SoM referent resolution. An embodied-track AC will read this as a planning-under-uncertainty paper. I accept this as major. It does not settle the case alone, but it compounds weakness 1.
+3. **The setting may be manufactured, and the obvious latency-reduction competitors are missing** (all three, major). The task needs the brain only because the track table is class-agnostic (the privileged-label script solves it). The latency is 4–8 s only because Astra runs at default effort on a one-token referent question. Four baselines are absent: Astra at minimal effort or a fast tier, a confidence-gated speculator cascade (CovNav-style), a detector-labels-then-text pipeline, and pre-motion resolution. Any of them could push D under 1 s, where the paper itself predicts ties. I accept this. It also cuts against the constraint that "the point is to need the frontier model less".
+4. **Both gates are risky, and nothing is committed on a standard benchmark** (R2 and R3 major).
+   - G1 needs Astra ≥15 points above Qwen-7B on household commonsense over 16 categories. The cited evidence for a large frontier gap comes from multi-hop person knowledge, not from this kind of commonsense, so G1 is close to a coin flip.
+   - G2 likely needs DOM's commented-out slow band and a 10 s + D horizon.
+   - Every positive effect is on cells chosen because they pass the gate.
+5. **"Model the oracle, not the truth" is unlikely to show up** (R1 major). One temperature per family cannot reorder the speculator's ranking. And if G1 passes, the brain is close to ground truth, so brain-calibrated and GT-calibrated temperatures will nearly coincide. I accept this. It removes R2's main "crisp idea" strength.
+
+## Reviewer claims accepted or rejected
+- **Accepted:** R3's internal-inconsistency argument (P4's +3 overall cannot follow from +8 contested at a 0.15 contested fraction). R1's and R2's power arguments. R1's latency–accuracy-frontier baseline. R1's point that i.i.d. latency jitter breaks the real correlation between difficulty and latency (major, answerable with the live-call subset). R1's v_max / geometry concern about G2.
+- **Accepted (overlap):** R3's AS-DDTO [2606.22277] claim. I checked the digest: it adds a belief-weighted term (Σ_j π(j)φ(d)) to DDTO's shared trunk, biasing it toward likely candidates, and prunes low-belief candidates. Its candidates are static, its weighting serves sensing rather than reveal-time success, and identity arrives through the robot's own queries. So it does not kill the paper, but "belief-weighted reachability branches" is no longer new, and the residual shrinks to the brain-calibrated belief plus the latency-posterior horizon. The submission cites neither AS-DDTO nor ARLI [2608.23831], and it must cite both.
+- **Partly rejected:** R2's claim that the uniform hedge is "itself an AESOP/DDTO transfer", so nothing new remains in the moving-target hedge. The proposal does handle a regime where AESOP's joint feasibility fails, and DDTO-for-moving-candidates [2610.17003] is concurrent (October 2026), so it cannot fully pre-empt the paper. This softens the novelty verdict a little but does not change the outcome, because the committed numbers for that delta are still within noise.
+- **Rejected as a weakness at this level:** R2's minor point that "speculative" and "answer-branching" oversell the method. This is wording, not substance.
+- **Not decisive:** the engineering-schedule risk (R2 major, R1 and R3 minor). It is real for a team new to robotics, but odds are conditioned on the experiments running as written.
+
+## Calibration
+I agree with an unresolved fatal weakness (weakness 1), which caps odds at 1.5. The ratings are 2/2/2, below the 3/3/3 anchor of 1–2. Strong partial overlap (AESOP, HO, DDTO, AS-DDTO) leaves only a narrow residual, and the venue fit is poor. Even if every prediction lands exactly at its threshold, the paper would show "do not idle" (prior work) plus a 1–3 point weighting effect within noise. **Odds 1.0.**
+
+p_core: the load-bearing prediction is P4, that brain-calibrated weighting beats the uniform hedge on contested trials. It holds only if (a) G1 passes, which I put at about 0.5, (b) G2 yields enough contested trials, about 0.7, and (c) the weighting effect appears, about 0.6–0.7 given those. That gives p_core ≈ 0.25. A paper rewritten around the negative result (a DOM-Sem protocol plus pilot measurements showing that a 7B model matches the brain, or that "do not idle" suffices) would be a workshop or benchmark note, about 0.4 at the CVPR main track. Risk-adjusted: 1.0 × 0.25 + 0.75 × 0.4 ≈ 0.55, so **0.6**.
+
+```json
+{"odds": 1.0, "p_core": 0.25, "odds_risk_adjusted": 0.6,
+ "decisive_weaknesses": [
+  "At threshold the novel effect is thin and statistically unresolvable: +8 pts on about 30 contested trials is about 1 SE; P4's +3 overall contradicts +8 contested x 0.15 contested fraction (about 1.2 pts); no tests, CIs or equivalence margins are specified, so the result reads as 'do not idle' (AESOP/DDTO) plus noise.",
+  "Weak CVPR fit: no new vision, perception or learning component; simulator ground-truth tracks, scripted executor and constant-velocity predictor; vision enters only through off-the-shelf SoM referent resolution.",
+  "The latency regime may be manufactured: the brain is needed only because the track table is class-agnostic, and D = 4-8 s only because Astra runs at default effort; low-effort or fast-tier Astra, a confidence-gated speculator cascade, a detector-labels-then-text pipeline and pre-motion resolution are all missing and may remove the contested regime.",
+  "Every committed effect is on a self-built, gate-selected DOM-Sem cell (with slow band and 10 s + D horizon for the 8 s claim); G1 (Astra >= 15 pts above Qwen-7B on 16-category household commonsense) is a near coin flip and closes the paper if it fails.",
+  "'Calibrate to the oracle, not the truth' is unlikely to be visible: one temperature per family cannot reorder the ranking, and with G1 passing the brain is close to ground truth; belief-weighted reachability branches are partly prior work (AS-DDTO 2606.22277, uncited)."
+ ],
+ "fixes_ranked": [
+  "Change the setting so latency is unavoidable and the gap is large: continuous arrivals or a conveyor with repeated per-item semantic decisions, and/or perception from pixels with a learned tracker, so the method is evaluated where fast pipelines cannot remove D (+1.0 to +1.5)",
+  "Add the latency-reduction frontier as baselines (Astra at minimal effort or a fast tier, a CovNav-style confidence-gated cascade, detector labels + text reasoning, pre-motion query) and commit the hedge's gain over the best point on success vs API calls (+0.7)",
+  "Make the novel comparison resolvable and consistent: use the free offline certifier to oversample at least 300 contested trials per gated cell; pre-register paired bootstrap CIs, McNemar and TOST; commit overall gain = contested gain x predicted contested fraction; add a plausible-set uniform hedge and an oracle one-hot belief to bound headroom (+0.5)",
+  "Add a visual component the CVPR audience cares about: track table estimated from pixels (detector and tracker noise) and/or a learned VLA executor in place of the scripted demonstrator, showing that the hedge's value survives perception error (+0.4)",
+  "Commit one positive effect on an unmodified DOM split, and measure latency conditioned on difficulty (speculator entropy) from the live-call subset instead of i.i.d. jitter (+0.3)",
+  "Compare against a non-greedy DDTO / AS-DDTO-style trajectory-optimisation hedge with the same belief, and cite and contrast AS-DDTO [2606.22277] and ARLI [2608.23831] (+0.2)"
+ ]}
+```
+
+## Salvage
+- **Reframe as a real-time evaluation protocol and diagnostic, not a hedge method.** A non-paused, latency-injected benchmark for frontier-brain manipulation with moving or changing scenes would be the contribution: measured Astra latency and cost distributions, the idle-time failure mode (the RT-Safe analogue in manipulation), and the latency–accuracy frontier across effort tiers, cascades and 7B models. As a CVPR Datasets & Benchmarks-style or NeurIPS D&B paper, this could plausibly reach about 4–5, if it covers several frontier models and tasks beyond the gated DOM-Sem cells.
+- **Find a regime where latency cannot be removed and the gap is large:** conveyors or continuous arrivals, mid-episode re-queries after a scene change, or referents that depend on dynamics ("the one that will fall off first"). There the frontier call cannot be moved before motion, and a hedge or cascade could show double-digit gains with enough contested trials. That gives a credible route to odds ≥ 5 at CoRL or RA-L, and to about 4 at CVPR only if perception is part of it.
+- **Move the claim to "need the frontier model less":** a calibrated speculator–cascade–hedge stack whose committed result is a decisive cost/performance change (for example, ≥80% of paused success at a fraction of the API calls, with in-call hedging only on uncertain trials). This matches the venue constraints better than the current method. With strong numbers, CVPR odds around 4–5 are plausible.
+- **Without a visual component, the honest home for the current method is CoRL, RA-L or ICRA,** where the AESOP/HO/DDTO lineage is the audience. Even there, it needs the power and consistency fixes and the fast-brain baselines to clear about 5.
