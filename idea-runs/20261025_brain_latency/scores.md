@@ -19,3 +19,50 @@
   - Make the arrival-time view carry something late binding and trail-plus-Δ prompting cannot. Examples: future reachability or feasibility windows rendered per ghost, or several ghosts for multimodal futures so the brain commits to a contingent choice.
   - Name a standard or standard-derived task family where which-decision errors are frequent.
   - Add the trails-plus-Δ baseline as the decisive ablation next to ReKep-style query-time marks.
+
+
+### C2 verdict
+
+- **Verdict**: revise(focus=novelty)
+- **Evidence**:
+  - **Source grounding: accurate.**
+    - [2104.10558]: correct. The Jensen-gap argument (expectation of a max beats the max of an expectation, App A-G, Eqs 11-17), the reveal-before-commit precondition (Sec I) and the 0/30 and 9-12/30 vs 27-28/30 results (Table II) match the paper. CfO also assumes a behavior model that covers the relevant modes (Sec III-B). C2's "cheap kinematic modes" stand in for that model, and nothing yet shows they cover DOM's forks.
+    - [2101.06547]: correct. The shared immediate action plus per-future continuation (Sec 3.4, Eq 13), the planning-diversity reward (Sec 3.2, Eq 7) and the 38% collision cut (Sec 4.3) are all stated accurately.
+    - [2610.17003]: correct, including the fallback guidance and the point that its decision-maker is a re-solving optimizer, not a slow reasoner.
+    - [2610.04506]: used with the right caveat (human hand-object clips, so it bounds extrapolation ability but does not measure it).
+    - [2601.22153] / [2609.34170]: DOM's sub-dimensions, trajectory families, scripted demonstrator and non-paused third-party runs on an RTX 4090 are stated correctly. Two claims go beyond the source:
+      - "The executor already exists ... as the interceptability oracle". The demonstrator does continuous target updating during approach (Sec 4.3). It does not report "whether, and in which time window" a grasp is feasible per hypothesis. That certifier has to be built, and whether the demonstrator code itself is released is not verified.
+      - The "four sub-dimensions" bullet lists three.
+  - **Novelty: a closer prior was missing, and the delta over a cheaper baseline is unproven.**
+    - [2407.08735] (AESOP, RSS 2024) is the nearest latency-aware contingency work, and C2 does not cite it.
+      - It already builds a slow-LLM pipeline around latency. An MPC keeps a tree of executor-certified options jointly feasible for K steps, where K is the measured LLM latency bound (GPT-3.5, mean 3.1 s, K = 4.3 s). The LLM picks one option from the certified set, and the choice runs on arrival (Sec IV-B, Eq 3, Alg 1, App I-3).
+      - So "executor certifies feasibility of the brain's options given the call latency" and "the executor keeps running a shared prefix while the brain thinks" are both prior work.
+      - What AESOP lacks: its branches are over the brain's possible *answers*, not over *world futures*. The LLM sees only the current scene and returns one choice. C2's real delta is narrower: hypotheses over other objects' futures shown to the brain, and an answer that is contingent on which future happens.
+    - [2610.09520] (SIGMA, Oct 2026) enumerates plausible scene realizations on board to decide *whether* to call a cloud VLM. The VLM still returns one maneuver, which is validity-checked on arrival (Sec V, VI-A/B, Eqs 22, 27-28). There is no contingent answer, so it is no overlap, but it is concurrent context for "decision-relevant futures".
+    - Searches found no work where a black-box brain writes a condition-to-action plan over enumerated arrival-time hypotheses. Queries (all-time, plus since 2025-10-25): "LLM contingency plan robot", "conditional plan VLM", "contingent plan language model", "multi-hypothesis future VLM planner", "contingency planning LLM", "branching plan LLM robot", "LLM planner latency moving", "VLM interception", "dynamic object VLM planner", "if-then plan LLM agent", "slow reasoner fast controller latency", "asynchronous VLM planner manipulation", "VLM latency moving target grasp", "anticipate LLM inference delay", "ranked fallback LLM robot", "conditional instructions VLM robot". So the narrow delta is real.
+    - **The contingent form may collapse to a ranked list.** The candidate's own example reads: "if 2b, grasp 2; if 2a, take 4", with conditions limited to "hypothesis realized", "object interceptable" and "otherwise re-ask". In DOM-type which-object decisions this is equivalent to the ordered preference [2, 4] filtered by interceptability at arrival.
+      - That equivalent needs no hypotheses shown to the brain and no contingent answer. It is SayCan's feasibility gate [2204.01691] evaluated at arrival time, or AESOP's certified-option set extended to the moving objects.
+      - The Jensen gap of [2104.10558] goes to the contingent form only when the brain's *preference order itself* changes with the realized future, beyond feasibility. C2 never names such a case in DOM.
+      - Neither listed ablation (marks + trails + Δ, with or without a free-form fallback) tests this. Both lack arrival-time feasibility filtering.
+  - **Mapping: clear.**
+    - CfO's later contingent decision maps to the brain's condition-to-action list.
+    - The uncertain event maps to which hypothesis comes true during the call, and its revelation to the tracker's assignment at arrival.
+    - LookOut's shared immediate action maps to the branch that keeps running during the next call. Planning diversity maps to keeping only the hypotheses that change the executor's verdict.
+    - The roles are specified, not evocative.
+  - **Transfer plausibility: the assumption is named but strained in the chosen testbed.**
+    - CfO's gain needs a genuinely multimodal future. In DOM's simulator, curved and collision-deflected trajectories off known geometry are deterministic, so a physics rollout gives a point forecast (the C1 regime) with no fork.
+    - Real forks come only from exogenous events: DOM's scripted disturbances, and objects that keep appearing [2601.22153, App D]. "Cheap kinematic modes" cover those only generically ("stops", "new object enters").
+    - The time-rescaling (slowing objects so that travel over a multi-second call fits the workspace) also moves the testbed away from the standard benchmark. No committed effect size is stated, and the panel's bar asks for one.
+  - **Contribution type: passes.** C2 is a training-free method: a contingent-answer protocol plus measurement-resolved branch selection.
+  - **Feasibility: plausible, but cost and engineering are unmeasured.**
+    - Nothing is trained, and simulator ground truth comes first.
+    - The interceptability certifier and the time-rescaled DOM variant are new engineering in Isaac Sim, for a team new to robotics.
+    - Four sub-dimensions × 200 trials × about 5 methods × several latency levels comes to roughly 10^4 or more image-bearing frontier calls. That needs a measured per-call cost before claiming it fits the US$1,000 budget.
+- **Strongest objection in 1 sentence**: In DOM-style which-object decisions, C2's contingent answer reduces to "an ordered preference list filtered by executor feasibility at arrival", which needs neither arrival-time hypotheses nor a contingent answer and is close to AESOP's latency-certified option set [2407.08735] plus SayCan-style gating [2204.01691] at arrival time; C2 has not named a task where the brain's preference itself depends on which future happens, nor tested that cheaper baseline.
+- **What a revision must do (for innovator)**:
+  - Cite [2407.08735] as the closest latency-aware contingency prior and state the delta: branches over world futures inside the brain's answer, versus branches over the brain's answers inside the executor.
+  - Add the decisive baseline: the brain returns a ranked target list from query-time marks + trails + Δ, and the executor runs the first entry that is interceptable at arrival.
+  - Name DOM-derived conditions where C2 must beat that baseline, i.e. where the preferred action changes with the realized future for semantic reasons and not only because of reachability. Examples: an instruction keyed to a motion outcome ("the one that stops"), or a newly appearing object that outranks the current target under the task instruction.
+  - Commit to an effect size on those sub-dimensions.
+  - Say which forks are exogenous in DOM (scripted disturbances, new arrivals) and which are deterministic physics, since the deterministic ones do not need hypotheses.
+  - Confirm that DOM's demonstrator is released, and measure per-call API cost on a pilot.
