@@ -66,3 +66,61 @@
   - Commit to an effect size on those sub-dimensions.
   - Say which forks are exogenous in DOM (scripted disturbances, new arrivals) and which are deterministic physics, since the deterministic ones do not need hypotheses.
   - Confirm that DOM's demonstrator is released, and measure per-call API cost on a pilot.
+
+
+
+### C3 verdict
+
+- **Verdict**: revise(focus=coherence)
+- **Evidence**:
+  - **Source grounding: accurate.**
+    - [2510.04371]: correct. Speculate top-k, pre-launch, commit on match. Losslessness rests on Assumption 2 (no visible side effects, or they can be rolled back). Physical, irreversible effects are named as the case where "naive speculation is harmful" (Sec 2). Top-3 gives a 54.7% hit rate in chess. No embodied domain is evaluated, so "top-3 covers the brain's answer far more often than top-1" is a chess and HotpotQA result. Whether it holds for an 8B VLM predicting Astra's grounding is untested, and it is C3's key assumption.
+    - [2610.17003]: correct. One branch per candidate, shared applied control, late separation, fallback toward a retained candidate (Sec I, III-C). It needs known deterministic agent dynamics, which DOM's scripted arm satisfies.
+    - [2407.08735]: correct. Options are kept jointly feasible for K = 4.3 s (the 95th percentile). C3's AESOP-style 90th-percentile arrival time is a fair borrowing.
+    - [2601.22153]: the code-level facts are taken correctly from the digest. They are the source of the main objection below: tags are computed once from the initial `object_states`, the evaluator holds the home pose until an action arrives, and reach is gated only on current distance.
+  - **Coherence: the "discovery" half is true by construction of the protocol, not an empirical finding.**
+    - The brain is queried at motion onset on the t0 image. DOM's referent is also fixed from the t0 object states. Latency delays the brain's output but cannot change its input. So "latency barely changes *which* object the brain names" cannot fail.
+    - The cost plan makes this explicit. "One Astra answer per trial and prompt type is cached and replayed at every injected latency Δ ∈ {0, 1, 2, 4, 8} s." With replay, the ID is identical across Δ by design, so "≥ 80% late-but-right" and "latency-induced wrong IDs ≤ 5%" are guaranteed outputs of the protocol. The falsifier ("wrong-ID errors exceed 15%") can never fire.
+    - Only the 200-trial live subset could differ, and only through API nondeterminism, not through latency.
+    - "Waiting keeps ≤ 0.5·P" is likewise close to mechanical, given an arm parked at home while 0.15–0.75 m/s objects leave a 0.75 m reach inside 10 s pick episodes.
+    - A panel will read the discovery as a restatement of the evaluator's design.
+  - **Coherence: on DOM the frontier brain is close to redundant, which undercuts both the premise and the committed effect sizes.**
+    - The brain and the speculator both receive the tracker's table (IDs, positions, velocities). DOM's tags are category, height, area, position, distance to robot and velocity, ranked from the t0 states [2601.22153].
+    - SR (position, distance) and MP (speed, direction) referents are then a deterministic function of the table and the instruction. A regex-plus-argmax script, or any 8B VLM, will be near-perfect from t = 0, with no call latency.
+    - On SR and MP, speculator top-1 should therefore equal the brain's answer almost always, leaving nothing to hedge. That contradicts the commitment "beats speculate-top-1-then-switch by ≥ 8 points on VU *and SR*". It also makes "brain-wait vs hedge" a comparison against a brain the task never needed.
+    - Only VU (appearance and category) gives the brain a possible edge. The ≥ 10-point gain over speculator-only on VU is plausible only if the speculator often misreads DOM's rendered categories. That is not argued, and the paper's whole claim to need the brain rests on it.
+    - [2610.01939] and [2610.14117] show where frontier brains add value: multi-step semantics and recovery. DOM's single-attribute referents are not that regime.
+  - **Novelty: a classical prior of the core mechanism is missing, and a fast-model-first prior exists.**
+    - [1503.07619] (Shared Autonomy via Hindsight Optimization, RSS 2015) is the core mechanism's direct ancestor. The robot does not wait for the authoritative agent's goal. It picks actions minimizing Σ_g b(g) Q_g, with b(g) from a predictor of that agent, so it "makes progress for all goals" when it can. It is explicitly contrasted with predict-then-blend (assist only toward the top goal) (Sec I, V).
+    - C3's "drive to the waypoint maximizing the speculator-weighted probability that the brain's eventual choice is catchable at arrival" is this QMDP hedge. b(g) comes from the local VLM, Q_g is catchability at t + Δ_90, and the speculate-top-1 baseline is predict-then-blend.
+    - The real delta over [1503.07619] is still meaningful: a known reveal time from a measured latency distribution, goals that move, and per-candidate windows that close during the wait. But it must be stated against this paper, not only against [2510.04371], which has no physics.
+    - [2607.05482] (TypeGo, Jul 2026) already runs a fast model's physical action while slow LLM planners deliberate. The fast action matches the eventual plan "in roughly 60% of cases" (Sec 8.1) and is preempted otherwise. That is C3's "speculate-top-1-then-switch" baseline as prior work, though with static scenes, no hedging and no feasibility certificate.
+    - With [2407.08735] (options kept feasible over the latency) and [2610.17003] (shared prefix over moving candidates), C3's method decomposes into known pieces. What remains new is the combination: a QMDP hedge over a slow semantic oracle's answers, against windows closing during that oracle's own latency. That delta is narrow but real.
+    - Searches found no work doing exactly that. Queries (all-time, plus since 2025-10-25): "speculative execution robot LLM latency", "speculative actions embodied", "act while thinking robot manipulation", "shared autonomy hindsight optimization", "hedging goal uncertainty robot motion", "pre-positioning during planner latency", "VLM inference latency moving object grasp", "asynchronous LLM planner robot speculative", "multiple candidate targets interception robot arm", "anticipatory motion goal prediction manipulation", "LLM latency hide robot motion", "slow planner fast executor waiting idle robot", "speculative planning robot", "LLM latency robot", "goal inference shared autonomy", "intercept moving objects robot", "speculative embodied agent".
+      - Speculative-decoding hits for VLAs ([2603.01581], [2605.13778]) concern token latency, not decisions: no overlap.
+      - [2603.19418] verifies predicted against measured state and holds on a miss: no hedge.
+      - Interception hits ([2609.22608], [2512.01108]) have a known target: no oracle.
+  - **Missing decisive baseline.** Uniform hedging: keep every currently catchable object reachable, AESOP/DDTO-style, with no speculator. This is a direct transfer of [2407.08735] / [2610.17003].
+    - With two or three objects on a table and an arm faster than the objects, much of the gain over brain-wait may come from simply leaving home toward the predicted object cloud.
+    - If uniform hedging ties speculator-weighted hedging, the one new ingredient (the weighting) contributes nothing.
+    - A trivial "move to the centroid of predicted positions at t + Δ_90" arm should also be included.
+  - **Mapping: clear.** Actor = Astra, speculator = local VLM, DDTO's candidates = top-k objects, identity revelation = brain arrival, shared prefix = in-call motion, conformal region = tolerance band from pilot residuals. The roles are specified, not evocative.
+  - **Transfer plausibility: the key assumption is named, but in DOM it fails in the direction that kills the method.** Hedging pays only when the speculator is uncertain and the candidates' windows overlap. On SR and MP the speculator is not uncertain, for the table reason above. The candidate's own main risk (hedge ties speculate-top-1) is therefore the expected outcome on two of the three named sub-dimensions, not a tail risk.
+  - **Contribution type: passes.** In-call hedged pursuit with a catchability certifier is a training-free method. The discovery half is analysis and cannot carry the paper alone.
+  - **Feasibility: plausible within the constraints.**
+    - The API cost (≈ 4,500 calls, US$450–630) is now grounded in [2610.01939]'s list prices.
+    - About 31 h of simulation is far under 40 GPU-days.
+    - The certifier is roughly 3 days of scripted CPU work over the released Warp state machines.
+    - The engineering risk is moderate: about 30 waypoint candidates must be driven inside DOM's state-machine approach phase without breaking the demonstrator's own gating.
+- **Strongest objection in 1 sentence**: On DOM the brain is queried on the same t0 state that fixes the referent, and its answer is replayed across Δ, so the discovery ("right but late") is guaranteed by the protocol; and with the tracker table given to the speculator, SR/MP referents are trivially computable without any brain, so the hedge has nothing to hedge and the committed "≥ 8 points over speculate-top-1 on SR" contradicts the setup, while the remaining mechanism is Hindsight-Optimization shared autonomy [1503.07619] with a VLM-predicted goal belief and a known reveal time.
+- **What a revision must do (for innovator)**:
+  - Drop the discovery as a contribution, or measure it where it can fail. One option: brain re-queries mid-episode (re-targeting after a miss, or DOM's LS / long-horizon re-selection), where the brain's input image changes with Δ, using live calls rather than cached replay.
+  - Make the brain necessary on a standard-derived condition. Keep DOM's trials and physics but use referents a table script and an 8B VLM cannot resolve, for example category-semantic instructions over DOM's object assets. Report script-only and speculator-only as arms, and commit the hedge's effect sizes only where speculator top-1 accuracy is measurably below the brain's (pilot first).
+  - Cite [1503.07619] as the mechanism's prior and [2607.05482] as the fast-first-action prior. State the delta: a known reveal time from measured latency, moving goals with closing windows, and a belief from a model of the slow oracle.
+  - Add the uniform-hedge (AESOP/DDTO, no speculator) and centroid pre-positioning baselines. Speculator weighting must beat them, or the claim reduces to "do not idle".
+  - Make the effect-size commitments consistent with the per-sub-dimension speculator accuracy.
+
+- **Evidence addendum (C3, physical-hedge prior)**:
+  - [2512.01108] (Think Fast, Dec 2025) already shows the QMDP hedge in physical interception. An action tree maximizes the expected probability of interception under a belief over the target's future state. On hardware it beats "move to the most likely goal at each update" 74% vs 63%. The main failure is the arm being too far away when the estimate settles (Sec V-C, VI–VII). This supports C3's transfer plausibility: hedging beats commit-to-most-likely by about 11 points when windows are tight. It also narrows the novelty: the hedge itself is known, and the new parts are the belief source (a model of a slow oracle's answer) and the target's identity, rather than its state, being revealed at a known latency.
+  - [2609.22608] (FRUITNINJA) computes minimum feasible arrival times against actuator limits, which is reusable as the certifier's window computation. There is no target-identity uncertainty.
+  - [2603.01581] and [2605.13778] use "speculative" for a VLA's own token or chunk decoding, verified before execution. No overlap.
