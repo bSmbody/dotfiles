@@ -1,0 +1,325 @@
+{
+  "title": "Hedging on What the Slow Brain Will Say: Belief-Weighted Answer-Branching for Moving Targets under Seconds-Scale VLM Latency",
+  "topic_relevance": {
+    "sub_topic": [
+      "Hierarchical robot manipulation with a frozen frontier VLM as high-level brain and a fast local executor",
+      "Latency-aware execution and real-time (non-paused) evaluation of embodied agents",
+      "Contingency planning and goal-uncertainty hedging (shared autonomy, interception)",
+      "Dynamic object manipulation with moving targets"
+    ],
+    "primary_focus": [
+      "What the executor should do with the arm during a seconds-long brain call whose answer names one of several moving objects",
+      "Using a small local VLM's calibrated prediction of the brain's answer as the belief over contingency branches",
+      "Valuing each in-call arm motion by whether the brain's eventual choice is still catchable when its answer arrives, under the measured latency distribution",
+      "A pilot-gated, standard-derived evaluation protocol (DOM-Sem) on which the brain is needed, with negative controls where it is not"
+    ]
+  },
+  "one_sentence_thesis": "While a slow vision-language brain decides which moving object to grab, a small local model's guess of its answer can steer the arm so its answer is still reachable.",
+  "core_problem": {
+    "problem_statement": "When a frozen frontier VLM chooses which of several moving objects to manipulate, its answer arrives seconds after the frame it reasoned on; today's executors either idle until it arrives or commit early to one guess, so the named object has often left the arm's catchable window by the time the answer lands [2601.22153][2607.05482].",
+    "why_it_matters": [
+      "Frontier-brain manipulation systems avoid the problem rather than solve it: GPT-GEAR's Observe does not advance the simulator and Act is synchronous [2610.28259]; CALL clears the VLA's queue and hands the paused LIBERO environment to Astra [2610.14117]; PyRUA-Lean counts LLM calls instead of seconds and runs cells strictly sequentially [2610.01939]. None is evaluated with moving objects.",
+      "Paused evaluation hides latency failures: in RT-Safe, eight VLM agents show similar completion in paused and real-time modes but 12.3x more collisions in real time, about 84% of them while the agent idles during inference [2610.09294] (navigation, but the mechanism is the idle executor).",
+      "Latency work on the executor side hides sub-second VLA inference by streaming the unexpired suffix of a time-indexed action chunk [2601.22153] or by rolling inference [2609.34170]; a single discrete choice of target has no suffix to stream.",
+      "Training-free reconciliation of a stale black-box VLM decision exists only for ego-motion (odometry re-projection with staleness decay [2606.20458]) or symbolic plans [2604.24039]. Late binding of a mark ID to a tracked entity [2409.01652] fixes where the answer lands, but cannot help once the named object is out of reach.",
+      "Prior hedging methods assume a goal revealed at the next step by a human [1503.07619], a single target whose state is revealed gradually [2512.01108], or a slow LLM whose every possible answer can be kept jointly feasible [2407.08735]. Moving candidates whose windows close during a seconds-long semantic decision are not covered."
+    ],
+    "concrete_example": "Illustrative scene (not a measured trial): a beer bottle rolls away from the robot, a can rolls across the table and a lemon is static. Instruction: 'pick up the one you would need a bottle opener for'. Astra answers 'the beer' about 4 s after motion onset. Brain-wait (DOM's evaluator holds the home pose until an action arrives [2601.22153]) starts the approach only at the answer, when the bottle is near the edge of the 0.75 m reach, and the demonstrator resets when it leaves reach. A fast-first executor in the TypeGo style [2607.05482] commits to its own top-1 guess (say, the can) and is preempted at the answer, now further from the bottle than if it had stayed home. Late binding [2409.01652] correctly maps 'the beer' to the bottle's live pose but cannot make it catchable again."
+  },
+  "key_novelty": {
+    "main_idea": "Reveal-time, speculator-weighted answer-branching: AESOP-style branches over the brain's possible answers, weighted by a calibrated local model of that brain, valued at answer arrival for moving targets",
+    "explanation": [
+      "Like AESOP, the executor keeps branches for each answer the slow model might give; unlike AESOP, moving targets make keeping all branches feasible impossible, so the branches are weighted.",
+      "The weights come from a small local VLM calibrated to predict what the frontier brain will answer, including its mistakes, not what the correct object is.",
+      "Each in-call arm motion is scored by whether the brain's eventual choice will still be catchable when its answer lands, averaged over the brain's measured latency, rather than at the next step."
+    ]
+  },
+  "problem_definition": {
+    "formal_setting": "A scene holds N objects with states s_i(t) (pose, velocity) evolving under physics that does not pause. At motion onset t0 a frozen brain B receives the frame o_{t0} with set-of-mark IDs [2310.11441], a class-agnostic track table and an instruction l, and returns an ID g* = B(o_{t0}, l) at reveal time t_r = t0 + D, with D ~ p_D (measured, per prompt type). The arm state x(t) follows bounded-speed kinematics |dx/dt| <= v_max inside reach radius r = 0.75 m [2601.22153]. Object g is catchable from x at time t, written C_g(x, t) = 1, if there is an intercept time tau in [t, T] with |x - p_g(tau)| <= v_max (tau - t) + slack and |p_g(tau) - base| <= r, where p_g is the predicted track. An in-call policy pi maps (t, x(t), track table, belief b) to arm commands on [t0, t_r). After t_r the executor binds g* to its track and runs DOM's demonstrator [2601.22153]; it never substitutes another object. Objective: max_pi P(success) = E_{g* ~ b, D ~ p_D}[ C_{g*}(x_pi(t0 + D), t0 + D) * P(intercept succeeds | catchable) ]. The proposed policy greedily maximises the reveal-time value V(w) = sum_g b(g) E_{D ~ p_D(. | D > t - t0)}[ C_g(x_w(t0 + D), t0 + D) ] over a grid of waypoints w at 10 Hz, where x_w is the arm state reached by heading to w. Hindsight Optimization [1503.07619] is the special case that evaluates C_g at the current time.",
+    "inputs": "Simulator RGB frame at motion onset (DOM camera, 480x360 renders [2601.22153]) with SoM marks; class-agnostic track table (IDs, positions, velocities, sizes) streamed at the control rate; natural-language instruction; the brain's answer (mark ID) at its arrival time; the brain's empirical latency distribution from a live-call pilot; the speculator's calibrated confidences over mark IDs; arm state and speed bounds.",
+    "outputs": "Arm commands at the control rate: in-call waypoint motion between motion onset and the brain's answer, then DOM's scripted interception of the brain-named object (approach, grasp, lift), with success and completion time logged per trial."
+  },
+  "key_terms": {
+    "Brain": "The frozen frontier VLM (GPT-6 Astra via API) that decides which object the instruction refers to; its answer takes seconds.",
+    "Speculator": "A small open VLM (Qwen2.5-VL-7B, inference only) shown the same prompt, whose confidences over object IDs are calibrated to predict the brain's answer.",
+    "Reveal time": "The moment the brain's answer arrives: motion onset plus the call latency, drawn from a distribution measured on live calls.",
+    "Catchable window": "The time interval during which the arm, given its speed limits and reach, could still intercept a given moving object.",
+    "Contested trial": "A trial in which no single in-call arm motion keeps every plausible answer (speculator probability >= 0.05) catchable at the 90th-percentile reveal time; only here can belief weighting differ from hedging uniformly.",
+    "Answer-branching": "Keeping the executor's options open for each answer the slow model might give, as AESOP does for an LLM's choice among recovery interventions [2407.08735].",
+    "Hindsight Optimization (QMDP)": "Choosing the action that minimises the belief-weighted per-goal cost-to-go, assuming the goal becomes known immediately afterwards [1503.07619].",
+    "Brain-wait": "Baseline in which the arm holds its home pose until the brain's answer arrives, as DOM's evaluator does when no action has been received [2601.22153].",
+    "Paused upper bound (P)": "Success when the simulator is frozen during the brain call, i.e. latency has no cost.",
+    "DOM-Sem": "A standard-derived condition of the DOM benchmark: DOM's scenes, physics, speed and friction ranges and demonstrator, with instructions that name the target through commonsense knowledge about DOM's 16 object categories instead of the category word.",
+    "Pilot gate": "Pre-registered thresholds measured on pilot trials before any main run, deciding on which conditions effect sizes are committed and whether the method paper proceeds at all."
+  },
+  "related_work": [
+    {
+      "sub_area": "Frontier-model brains over robot executors (and what paused evaluation hides)",
+      "what_it_does": "GPT-GEAR has GPT-6 Astra emit bounded, synchronous end-effector increments anchored to the pose at call start; Observe does not advance the simulator, and latency appears only as 7.82-28.43 min per episode [2610.28259]. CALL hands a paused LIBERO environment to Astra when a learned head on π0.5 asks for help, dropping throughput from 8.25 to 2.58 steps/s [2610.14117]. PyRUA-Lean has Astra write code cells with local checks and counts calls instead of seconds, because gateway latency varies too much [2610.01939]. RT-Safe shows that in non-paused navigation most collisions of VLM agents happen while they idle during inference, and only a prompt-level adaptation is tried [2610.09294].",
+      "open_gap": "All frontier-brain manipulation systems are evaluated on static tasks with the world paused or the executor idle during the call. No method says what the arm should do during a seconds-long brain call when the decision concerns moving objects.",
+      "citations": ["2610.28259", "2610.14117", "2610.01939", "2610.09294"]
+    },
+    {
+      "sub_area": "Latency compensation for low-level VLAs and for stale high-level outputs",
+      "what_it_does": "DynamicVLA streams only the part of an action chunk whose execution time has not passed and introduces the DOM benchmark for moving-object manipulation with sub-second (0.226 s) chunk latency [2601.22153]; RAVEL runs DOM non-paused on an RTX 4090 with rolling inference [2609.34170]. For stale high-level outputs, TIC-VLA trains a fast policy on the VLM's stale KV cache plus delay and ego-motion offset [2602.02459]; Slow Brain, Fast Planner motion-compensates a stale black-box VLM trajectory choice by odometry with exponential staleness decay, holding >80% success at 5 s delay in navigation [2606.20458]; AgenticCache reconciles a k-step-late symbolic plan with the executed trajectory [2604.24039]; ReKep late-binds VLM constraints over mark IDs to tracked keypoints [2409.01652].",
+      "open_gap": "These methods repair where a stale decision lands, for ego-motion, symbolic plans or tracked entities. None acts during the call to keep the eventual decision feasible, which is what matters when the referent can leave the reachable workspace before the answer arrives.",
+      "citations": ["2601.22153", "2609.34170", "2602.02459", "2606.20458", "2604.24039", "2409.01652"]
+    },
+    {
+      "sub_area": "Hedging physical motion over an unknown goal",
+      "what_it_does": "Shared Autonomy via Hindsight Optimization chooses actions minimising sum_g b(g) Q_g with a belief from a model of the user, so the robot makes progress for all goals when it can; it beats predict-then-blend on completion time in a 10-user study, under static goals, deterministic dynamics and a next-step goal reveal [1503.07619]. Think Fast propagates a QMDP expected-interception value through an offline action tree under a Kalman belief over one projectile's future state, reaching 74% vs 63% for moving to the most likely goal on hardware, with 'arm too far away' as the main failure [2512.01108]. Incremental language understanding starts an MPC motion on a partial parse and resolves ambiguity randomly, replanning when the next fragment arrives, in static scenes [2508.06095].",
+      "open_gap": "The hedge itself is known. The belief has come from a human's motion or a target's dynamics, the reveal is immediate or gradual, and goals are static or a single target. A goal identity revealed all at once by a slow semantic model after a measured random delay, while each candidate's catchable window closes, is not treated.",
+      "citations": ["1503.07619", "2512.01108", "2508.06095"]
+    },
+    {
+      "sub_area": "Contingency planning over a slow reasoner's answers or over futures",
+      "what_it_does": "AESOP keeps a nominal plan plus one recovery branch per intervention a slow LLM might choose, sharing inputs for K = 4.3 s, the 95th percentile of measured GPT-3.5 latency, so whatever the LLM picks is still feasible on arrival [2407.08735]. LookOut takes one immediate action safe under all predicted futures plus a probability-weighted per-future cost-to-go, postponing the branch decision until more information arrives [2101.06547]. Contingencies from Observations shows via a Jensen-gap argument that contingent plans dominate noncontingent ones when the uncertain event is revealed before commitment [2104.10558]. Deferred-decision trajectory optimization keeps one branch per moving candidate with a shared applied control, separating as late as feasible and falling back toward a retained candidate when no branch verifies; identity is revealed by repeated sensor queries [2610.17003].",
+      "open_gap": "AESOP branches over a slow model's answers but requires a fixed, executor-certified answer set that can all be kept feasible; DDTO handles moving candidates but its identity information comes from an optimizer's sensor queries, not a slow semantic model; LookOut and CfO branch over world futures. The case where a slow semantic model's answer set cannot all be kept feasible, and the branches must be weighted by a model of that slow model, is the residual this work targets. It is a narrow combination, not a new planning principle.",
+      "citations": ["2407.08735", "2101.06547", "2104.10558", "2610.17003"]
+    },
+    {
+      "sub_area": "Speculating a slow authoritative model's answer",
+      "what_it_does": "Speculative Actions has a fast speculator guess a slow actor's top-k next actions and pre-launch them, committing on a match; top-3 reaches 54.7% hit rate in chess, and losslessness requires that unmatched branches have no visible side effects, since with irreversible effects naive speculation is harmful [2510.04371]. TypeGo emits one fast-model skill while slow LLM planners deliberate; it matches the eventual plan in roughly 60% of cases and is preempted otherwise, in static navigation scenes without hedging or feasibility checks [2607.05482].",
+      "open_gap": "Speculation over a slow model's answer has been either digital and reversible or physical but committed to the top-1 guess. Physical speculation that spends the speculator's top-k coverage on keeping several answers feasible is missing.",
+      "citations": ["2510.04371", "2607.05482"]
+    },
+    {
+      "sub_area": "Referent resolution by frontier versus small open VLMs",
+      "what_it_does": "Set-of-Mark prompting overlays speakable IDs on segmented regions so a black-box model answers with an ID that maps back to a region [2310.11441]. On knowledge-laden referring expressions, Qwen2.5-VL-7B resolves the referent in text 40.8% of the time against 89.1% for Gemini 2.5 Pro, although its box localisation is better [2508.14080]. On appearance and location expressions (RefCOCO val), Qwen2.5-VL-7B already reaches 90.0 [2502.13923].",
+      "open_gap": "The frontier advantage is large for multi-hop person-entity knowledge and small for appearance-based referents; how large it is for household commonsense about a few rendered object categories is unmeasured. Whether a frontier brain is needed at all on a moving-object benchmark must therefore be tested, not assumed.",
+      "citations": ["2310.11441", "2508.14080", "2502.13923"]
+    }
+  ],
+  "method": {
+    "high_level_flow": [
+      "Pilot gate (days 5-7, before any main run): live Astra calls -> latency distribution and per-call cost; brain vs speculator referent accuracy and agreement per DOM-Sem family; certifier rollouts -> contested-trial fraction per family, latency and speed band -> commit or withhold each effect size",
+      "At motion onset: t0 frame + SoM marks + track table + instruction -> brain call (asynchronous) and speculator call (local)",
+      "During the call: speculator logits -> calibration -> belief b over IDs; track table -> motion predictor -> catchability certifier; b + certifier + latency posterior -> reveal-time waypoint selection at 10 Hz -> arm motion",
+      "At reveal: brain ID -> bind to live track -> DOM demonstrator intercept of that object (no substitution)"
+    ],
+    "modules": [
+      {
+        "module": "Brain client",
+        "role": "Queries the frozen frontier model once per trial at motion onset for the referent's mark ID.",
+        "model": "GPT-6 Astra via API, default reasoning effort, no fine-tuning",
+        "inputs": ["t0 RGB frame with SoM marks on the objects' current pixels [2310.11441]", "class-agnostic track table at t0", "instruction"],
+        "outputs": ["one mark ID", "measured latency and token cost of the call"],
+        "notes": "Because the brain sees only the t0 frame, its answer does not depend on the injected latency, so one answer per trial is cached and replayed at each latency, a valid way to compare executors and not a claim about the brain. A 200-call live subset measures the latency distribution and API nondeterminism. Per-call cost is measured in the pilot; Astra list prices are $10 per million input tokens and $50 per million output tokens including reasoning [2610.01939]."
+      },
+      {
+        "module": "Speculator",
+        "role": "Predicts, within about a second and locally, a probability over which ID the brain will name.",
+        "model": "Qwen2.5-VL-7B-Instruct [2502.13923], bf16, inference only on one 24 GB GPU",
+        "inputs": ["the same marked frame, table and instruction as the brain"],
+        "outputs": ["next-token logits restricted to the scene's ID tokens"],
+        "notes": "Its own inference latency is measured and injected: until the belief is available, the policy runs the uniform hedge. Its answers are cached per trial like the brain's."
+      },
+      {
+        "module": "Brain-model calibration",
+        "role": "Turns speculator logits into a belief about the brain's answer, including the brain's own errors.",
+        "model": "Temperature scaling, one scalar per DOM-Sem family",
+        "inputs": ["speculator logits on pilot trials", "brain answers on the same trials (labels), not ground truth"],
+        "outputs": ["calibrated belief b(g) over scene IDs"],
+        "notes": "Two-fold cross-fitting on the pilot; main-run trials are never used for fitting. An ablation calibrates to ground truth instead, to test whether modelling the brain rather than the truth matters."
+      },
+      {
+        "module": "Motion predictor",
+        "role": "Predicts each object's track over the remaining episode from the current table.",
+        "model": "Constant-velocity rollout with a planar friction deceleration fitted on pilot tracks (scripted, CPU)",
+        "inputs": ["track table (positions, velocities)"],
+        "outputs": ["predicted positions p_g(tau) for tau up to the episode end"],
+        "notes": "Re-run at 10 Hz on the live table, so collision-deflected rolls are corrected as they happen. A privileged ablation replaces it with simulator ground-truth rollouts, since DOM's rolls are deterministic given the initial state [2601.22153]."
+      },
+      {
+        "module": "Catchability certifier",
+        "role": "For each candidate object, waypoint and possible reveal time, decides whether the arm could still intercept the object afterwards.",
+        "model": "Scripted reachability test against arm speed bounds and DOM's max_reach_dist 0.75 m [2601.22153]; minimum-feasible-arrival-time computation of the kind used for interception planning [2609.22608]",
+        "inputs": ["arm state", "candidate waypoint", "predicted object tracks", "candidate reveal times"],
+        "outputs": ["C_g(x_w(t_r), t_r) for each g, w and quantised t_r", "per-trial contested flag at each latency"],
+        "notes": "About 30 waypoints on a workspace grid and 8 quantised reveal times, evaluated in vectorised NumPy; also run offline over all trial specifications to compute the contested-trial fraction per latency and speed band before any main run."
+      },
+      {
+        "module": "Reveal-time hedge policy",
+        "role": "Chooses the in-call waypoint that maximises the belief-weighted chance that the brain's eventual choice is catchable when the answer lands.",
+        "model": "Greedy receding-horizon argmax over the waypoint grid at 10 Hz (scripted)",
+        "inputs": ["belief b", "certifier table", "latency posterior p_D(D | D > elapsed)"],
+        "outputs": ["Cartesian waypoint target for the arm controller"],
+        "notes": "The latency posterior is the empirical live distribution, scaled to the nominal latency of the condition and truncated at the elapsed call time, so the policy commits more as the call runs long. Ablations swap the belief (uniform, top-1, ground-truth calibrated) and the value horizon (next-step, 90th-percentile, full posterior, oracle known D)."
+      },
+      {
+        "module": "Interception executor",
+        "role": "After the answer, binds the brain's ID to the live track and intercepts it.",
+        "model": "DOM's released Warp pick state machine (approach, grasp-and-lift, reset when the object leaves reach) [2601.22153]",
+        "inputs": ["brain ID bound to its live track", "arm state at reveal"],
+        "outputs": ["arm commands until success, reset or episode end"],
+        "notes": "Unchanged from DOM, so differences between arms come only from the in-call phase. The executor never substitutes another object, even if the named one is no longer catchable."
+      }
+    ],
+    "novel_architectural_elements": [
+      "The belief over contingency branches comes from a local model calibrated against the slow brain's own answers, so the branch weights model the oracle, not the world or the truth.",
+      "The branch value is evaluated at the reveal time drawn from the brain's measured latency distribution, conditioned on elapsed call time, rather than at the next step (as in [1503.07619]) or at a fixed latency quantile with all branches kept feasible (as in [2407.08735]).",
+      "The in-call hedge layer sits between an asynchronous brain call and an unmodified released interception executor, so the brain, speculator and executor are all used off the shelf and only the in-call phase differs between arms."
+    ],
+    "pseudocode": "```\n# per trial, motion onset at t0\nfuture = brain.query_async(frame_t0_som, table_t0, instr)       # cached answer, injected latency D ~ p_D\nlogits = speculator(frame_t0_som, table_t0, instr)             # available after measured speculator latency\nb = softmax(logits[ID_tokens] / T_family)                      # calibrated to brain answers (cross-fitted)\nwhile not future.done():                                       # 10 Hz\n    t = now(); x = arm_state(); P = predict_tracks(table())\n    post = p_D.truncate(lower = t - t0)                        # latency posterior given no answer yet\n    if b is None: w_b = uniform(ids)                           # before speculator returns\n    else: w_b = b\n    best = argmax_{w in W} sum_g w_b[g] * sum_k post[k] * C(g, reach(x, w, t0 + D_k), t0 + D_k, P)\n    arm.move_toward(best)\ng_star = future.result()                                       # brain's mark ID\ndom_pick_sm.run(target = track(g_star))                        # no substitution\n```",
+    "design_choices": [
+      "Lead with a pilot gate: effect sizes are committed only on DOM-Sem families where Astra's referent accuracy exceeds the speculator's by >= 15 points, the speculator's top-1 agreement with Astra is <= 0.8 and its top-3 agreement is >= 0.15 above top-1; otherwise there is nothing for the brain to add or nothing for the hedge to spend.",
+      "Gate each latency cell on the contested-trial fraction (>= 0.15, computed offline by the certifier over all trial specifications, zero API cost), because weighting can only differ from uniform hedging on contested trials.",
+      "Fix the episode horizon as T = 10 s + D for pick tasks, so the post-answer time budget equals DOM's native 10 s pick episode at every latency; the native fixed 10 s horizon is reported as a sensitivity row at D = 8 s, where it leaves about 2 s after the answer.",
+      "Add DOM's own commented slow speed band [0.05, 0.25] m/s [2601.22153] at D = 4 s and 8 s, obtained by scaling each trial's initial speeds by 1/3 (which maps [0.15, 0.75] exactly onto it), because at default speeds most moving objects may leave the 0.75 m reach within the call and leave nothing contested. The brain is re-queried for these trials.",
+      "Use DOM's released non-paused evaluator and Warp demonstrator unchanged [2601.22153], already run by a third party on an RTX 4090 [2609.34170], to keep engineering within a team new to robotics.",
+      "Use a class-agnostic track table for every arm, and report a privileged-label script (ground-truth categories plus the attribute sheet) as a reference row, to state openly that the brain is needed only to read category and commonsense from pixels and text.",
+      "Keep DOM's own SR, MP (table-computable referents) and single-object CR sub-dimensions as negative controls on which the method must tie the baselines.",
+      "Train nothing: the brain, speculator and executor are frozen; only one temperature per family and one friction coefficient are fitted, on pilot data."
+    ],
+    "theoretical_grounding": "During the call the brain's answer is fixed by the t0 frame and does not depend on the arm's motion, and no partial information about it arrives before the reveal. The in-call problem is then a POMDP whose hidden variable (the brain's answer) is revealed exactly once, at a random time independent of the arm. Under these conditions the QMDP assumption of Hindsight Optimization [1503.07619] (no information gathering) costs nothing in the in-call phase, provided the per-goal value is evaluated at the reveal time and not at the next step; V(w) = E_{g~b} E_{D}[C_g(x_w(t0+D), t0+D)] is then the exact success probability of reaching w before the reveal, up to the post-reveal interception rate. The remaining approximation is greedy waypoint selection instead of full trajectory optimisation. Contingency planning dominates committing to one guess when the uncertain event is revealed before the contingent action must be executed, by the Jensen-gap argument of [2104.10558]; LookOut's Eq. 13 gives the same immediate-action-plus-weighted-continuation structure for world futures [2101.06547]. When all answers can be kept catchable, the policy reduces to AESOP-style joint feasibility over answers [2407.08735]; weighting matters only on contested trials. Belief weights from a model of the oracle rather than of the truth are what make the objective the success of executing the brain's choice, which the executor is not allowed to override."
+  },
+  "model_details": {
+    "base_model": "No model is trained. Brain: GPT-6 Astra (frozen, black-box API, default effort) [2610.01939]. Speculator: Qwen2.5-VL-7B-Instruct (frozen open weights, inference only, bf16 on one RTX 3090/4090) [2502.13923]. Executor: DOM's released scripted Warp pick state machine on a simulated Franka [2601.22153]. No VLA is used in the main method; the DynamicVLA checkpoint is not needed because the demonstrator executes the interception.",
+    "training": {
+      "method": "No model training; post-hoc calibration only (temperature scaling of the speculator's ID logits, fitted against the brain's answers) plus a one-parameter friction fit for the motion predictor, both on pilot trials.",
+      "objective_functions": [
+        "Purpose: make the speculator's confidences match how often the brain names each object. Formally: T_f = argmin_T sum_{i in pilot_f} -log softmax(z_i / T)[g_brain(i)], cross-fitted over two folds per DOM-Sem family f.",
+        "Purpose: choose the in-call waypoint that keeps the brain's eventual choice catchable when its answer lands (the run-time objective, not trained). Formally: w*(t) = argmax_{w in W} sum_g b(g) sum_k p_D(D_k | D > t - t0) C_g(x_w(t0 + D_k), t0 + D_k).",
+        "Purpose: fit the planar rolling deceleration used by the motion predictor. Formally: mu = argmin_mu sum_{tracks} || v_obs(t) - max(0, |v0| - mu g t) v0/|v0| ||^2 on pilot tracks."
+      ],
+      "adaptation": "None. All networks keep their released weights; the only fitted quantities are one temperature per DOM-Sem family and one friction coefficient.",
+      "key_hyperparameters": {
+        "nominal_brain_latency_s": "0, 2, 4, 8 (per-trial jitter: nominal x ratio resampled from the live-call latency distribution)",
+        "speed_bands_m_per_s": "DOM default [0.15, 0.75]; DOM commented slow band [0.05, 0.25] at 4 s and 8 s",
+        "episode_horizon_pick_s": "10 + D (native 10 s reported as sensitivity at D = 8 s)",
+        "replan_rate_hz": "10",
+        "waypoint_grid": "about 30 Cartesian waypoints within the 0.75 m reach",
+        "latency_quantisation": "8 reveal-time bins from the latency posterior",
+        "plausibility_threshold_for_contested": "speculator probability >= 0.05; contested at the 90th-percentile reveal time",
+        "gate_brain_minus_speculator_accuracy_pts": ">= 15",
+        "gate_top1_agreement_max": "0.8",
+        "gate_top3_minus_top1_agreement_min": "0.15",
+        "gate_contested_fraction_min": "0.15 per (family, latency, speed band) cell",
+        "trials": "pilot 100 per DOM-Sem family (300); main 200 per condition (3 DOM-Sem families + SR, MP, CR controls = 1,200)",
+        "api_calls": "about 2,900 (300 pilot + 1,200 main + 1,200 slow-band re-queries + 200 live), budgeted at <= $0.14 per call (<= about $410), per-call cost measured in the pilot"
+      }
+    }
+  },
+  "comparison_to_sota": {
+    "related_methods": [
+      "AESOP [2407.08735]: MPC tree with one branch per possible slow-LLM answer, all kept feasible for the 95th-percentile measured latency.",
+      "Shared Autonomy via Hindsight Optimization [1503.07619]: belief-weighted per-goal cost-to-go, goal revealed at the next step, static goals.",
+      "LookOut [2101.06547]: one immediate action safe under all predicted futures plus probability-weighted per-future continuations.",
+      "Deferred-decision trajectory optimization [2610.17003]: one branch per moving candidate, shared applied control, identity revealed by sensor queries, fallback toward a retained candidate.",
+      "Think Fast [2512.01108]: QMDP expected-interception value over a state-time action tree under a belief over one projectile's future state.",
+      "TypeGo [2607.05482]: a fast model's first skill runs while slow LLM planners deliberate and is preempted if the plan differs.",
+      "Speculative Actions [2510.04371]: top-k speculation of a slow actor's next action with commit-on-match, lossless only for reversible effects.",
+      "Incremental language understanding for online motion planning [2508.06095]: move on a partial parse, resolve ambiguity randomly, replan on new fragments.",
+      "Slow Brain, Fast Planner [2606.20458]: training-free ego-motion compensation and staleness decay of a stale black-box VLM choice."
+    ],
+    "key_differences": [
+      "vs. AESOP [2407.08735]: same answer-branching over a slow model's possible outputs and the same use of measured latency; here the answers are moving objects whose windows close, so joint feasibility generally fails, and branches are weighted by a calibrated model of the slow model. This is the closest prior work and the delta is the weighting plus the moving-target setting.",
+      "vs. Hindsight Optimization [1503.07619]: same belief-weighted hedge; the belief models a slow semantic oracle rather than a human's motion-revealed intent, and the per-goal value is taken at the reveal time from the measured latency posterior rather than at the next step. The next-step version is run as an ablation, with the expectation that it differs only on contested trials at long latency.",
+      "vs. LookOut [2101.06547]: LookOut branches over world futures from a learned sampler; here the branches are the brain's possible answers and the world part is a deterministic track prediction.",
+      "vs. DDTO [2610.17003]: DDTO keeps all assigned moving candidates feasible with an optimizer and gains identity information gradually from sensor queries; here identity arrives all at once from a slow VLM and the executor is a released scripted state machine.",
+      "vs. Think Fast [2512.01108]: Think Fast's uncertainty is over one known target's future state; here it is over which of several targets the brain will name.",
+      "vs. TypeGo [2607.05482]: TypeGo commits physically to the fast model's top-1 and is preempted, in static scenes without feasibility reasoning; that policy is the speculate-top-1-then-switch baseline here.",
+      "vs. Speculative Actions [2510.04371]: physical motion is irreversible, so instead of executing the top-k guesses the arm moves to keep them feasible; the top-3 versus top-1 coverage gap is what the hedge spends, and it is measured for an 8B VLM predicting Astra rather than assumed from chess.",
+      "vs. Slow Brain, Fast Planner [2606.20458] and late binding [2409.01652]: those repair where a stale answer lands; this work acts before the answer to keep it executable, and uses late binding at reveal as plumbing."
+    ]
+  },
+  "proposed_evaluation": {
+    "evaluation_setting": "Real-time (non-paused) simulated dynamic manipulation on DOM [2601.22153] with DOM's released evaluator, which holds the last action when none has arrived and paces steps to wall-clock time, and DOM's Warp demonstrator as the executor, run on RTX 3090/4090 GPUs as RAVEL did [2609.34170]. The brain is queried once at motion onset; latency is injected (nominal 0, 2, 4, 8 s with jitter from 200 live Astra calls). The paper leads with the pilot gate: per DOM-Sem family, brain and speculator referent accuracy, speculator top-1/top-3 agreement with the brain, the measured latency distribution and per-call cost, and the contested-trial fraction per latency and speed band. Effect sizes are committed only on cells that pass. Schedule: certifier days 1-3, DOM-Sem generator day 4, brain client and speculator days 5-6, pilot and gate decision day 7 (2026-11-01), main runs days 8-13, analysis by 2026-11-09. Load (one real-time simulator instance per GPU): 1,200 trials x 9 arms x 4 latencies = 43,200 default-speed episodes (horizon 10 s + D, about 162 h); 21,600 slow-band episodes at 4 s and 8 s (about 96 h); 10,800 native-horizon sensitivity episodes at 8 s (about 30 h); ablation arms on gated families only (about 65 h). In total about 350 h, roughly 15 GPU-days, under the 40 GPU-day cap and about 4 days of wall-clock time on 4 cards.",
+    "benchmarks": [
+      {
+        "name": "DOM-Sem (DOM scenes, physics, speed/friction ranges and demonstrator; instructions name the target through superordinate/function, exclusion composed with a table attribute, or commonsense consequence over DOM's 16 categories; unique answers from a hand-labelled 16-row attribute sheet; multi-object environments regenerated at four objects with DOM's released generator where needed; specifications released)",
+        "task_type": "language-conditioned dynamic pick (referent resolution + interception of moving objects)",
+        "newly_constructed": true
+      },
+      {
+        "name": "DOM Spatial Reasoning (SR) and Motion Perception (MP) sub-dimensions, 10 environments x 20 trials each [2601.22153] (negative controls: referents computable from the table)",
+        "task_type": "language-conditioned dynamic pick",
+        "newly_constructed": false
+      },
+      {
+        "name": "DOM Closed-loop Reactivity (CR) sub-dimension [2601.22153] (negative control: single object, nothing to hedge over)",
+        "task_type": "dynamic pick of a single moving object",
+        "newly_constructed": false
+      },
+      {
+        "name": "DOM slow speed band [0.05, 0.25] m/s (DOM's own commented configuration [2601.22153]) at 4 s and 8 s latency, by 1/3 speed scaling of the same trials",
+        "task_type": "language-conditioned dynamic pick at reduced object speed",
+        "newly_constructed": true
+      }
+    ],
+    "baselines": [
+      "Paused upper bound (simulator frozen during the brain call)",
+      "Brain-wait (arm holds home pose until the answer; DOM's default behaviour)",
+      "Script-only (rule parser over DOM's tag grammar and the table; uniform choice among kinematically consistent objects for semantic words)",
+      "Speculator-only (Qwen2.5-VL-7B top-1 executed immediately, no brain)",
+      "Speculate-top-1-then-switch (TypeGo-style fast first action [2607.05482], preempted at the answer)",
+      "Centroid pre-positioning (move toward the centroid of all objects' predicted positions at the 90th-percentile reveal time)",
+      "Uniform hedge (same reveal-time value with a uniform belief over scene objects; an AESOP/DDTO transfer [2407.08735][2610.17003])",
+      "Next-step-reveal Hindsight Optimization (same belief, value at the current time [1503.07619])",
+      "Privileged-label script (ground-truth categories plus attribute sheet; reference row, not a competitor)"
+    ],
+    "main_metrics": [
+      "Task success rate per arm, condition, nominal latency and speed band (DOM's success criterion)",
+      "Task completion time from motion onset (DOM's time metric) and wall-clock time per trial",
+      "Fraction of P - W recovered, where P is paused success and W is brain-wait success",
+      "Success on contested versus uncontested trials, with the contested-trial fraction reported for every (family, latency, speed band) cell",
+      "Catchable-at-reveal rate: fraction of trials in which the brain-named object is catchable when the answer arrives",
+      "Brain and speculator referent accuracy against ground truth; speculator top-1 and top-3 agreement with the brain; expected calibration error of the belief against brain answers",
+      "Measured brain latency distribution (median, 90th and 95th percentiles) and measured API cost per call and per trial",
+      "Arm idle time during the call"
+    ],
+    "ablations": [
+      "Belief source: calibrated-to-brain vs calibrated-to-ground-truth vs uncalibrated logits vs uniform vs top-1 only",
+      "Value horizon: next-step reveal vs fixed 90th-percentile reveal (AESOP-style K) vs full latency posterior with elapsed-time conditioning vs oracle known latency",
+      "Top-k truncation of the belief: k = 1, 2, 3, all",
+      "Motion predictor: constant velocity with fitted friction vs simulator ground-truth rollout (privileged)",
+      "Episode horizon at 8 s latency: 10 s + D vs DOM's native fixed 10 s",
+      "Speed band: DOM default vs DOM slow band at 4 s and 8 s latency",
+      "Latency jitter: fixed nominal latency vs jitter resampled from live calls"
+    ]
+  },
+  "falsifiable_predictions": [
+    {
+      "pillar": "Pilot gate G1: the brain is needed on DOM-Sem and the speculator is genuinely unsure",
+      "prediction": "Predicted, not observed: at least one of the three DOM-Sem families (most likely the commonsense-consequence family) shows Astra's referent accuracy >= 15 points above Qwen2.5-VL-7B's, speculator top-1 agreement with Astra <= 0.8, and top-3 agreement >= 0.15 above top-1.",
+      "kill_condition": "No family passes on the 100-trial pilot: within DOM's 16-category object world the frontier brain is not needed or the speculator leaves nothing to hedge; the method paper stops on 2026-11-01 and only the DOM-Sem protocol and pilot measurements are reported."
+    },
+    {
+      "pillar": "Pilot gate G2: contested trials exist at long latency",
+      "prediction": "Predicted, not observed: the contested-trial fraction computed by the certifier falls with latency at DOM's default speeds, and at 8 s latency it is >= 0.15 in the slow speed band for each gated family.",
+      "kill_condition": "Contested fraction < 0.15 at 8 s in both speed bands: the reveal-time term cannot be tested at long latency, its 8 s commitment is withdrawn and the paper claims nothing about it beyond 4 s."
+    },
+    {
+      "pillar": "In-call hedging recovers latency loss",
+      "prediction": "Predicted, not observed: at 4 s nominal latency on gated DOM-Sem families, the method recovers >= 50% of P - W.",
+      "kill_condition": "Recovery < 25% of P - W on every gated family."
+    },
+    {
+      "pillar": "Speculator belief weighting (the ingredient beyond AESOP/DDTO)",
+      "prediction": "Predicted, not observed: on gated families at 4 s, the method beats the uniform hedge and centroid pre-positioning by >= 8 points on contested trials and >= 3 points overall, and ties them within +/-3 points on uncontested trials.",
+      "kill_condition": "Gain over the uniform hedge < 3 points on contested trials: the weighting adds nothing and the result reduces to 'do not idle', an AESOP/DDTO transfer."
+    },
+    {
+      "pillar": "Reveal-time value (the ingredient beyond Hindsight Optimization)",
+      "prediction": "Predicted, not observed: in the slow speed band at 8 s latency, the method beats next-step-reveal HO by >= 5 points on contested trials, and ties it within +/-3 points at latencies <= 2 s, where the two coincide.",
+      "kill_condition": "Gain < 3 points on contested trials at 8 s in the slow band (given G2 passes): the method is Hindsight Optimization with a VLM belief."
+    },
+    {
+      "pillar": "Brain need and fast-first comparison",
+      "prediction": "Predicted, not observed: the method beats speculator-only by at least half of (brain accuracy - speculator accuracy) x P, and beats speculate-top-1-then-switch by at least half of (top-3 agreement - top-1 agreement) x (P - W), both from pilot-measured quantities, on gated families at 4 s.",
+      "kill_condition": "The method fails to beat speculator-only on any gated family: the frontier brain's slower but better answer is not worth waiting for in this setting."
+    },
+    {
+      "pillar": "Negative controls",
+      "prediction": "Predicted, not observed: on DOM SR and MP, script-only is within 3 points of the brain's paused accuracy, and the method is within +/-3 points of speculator-only and of speculate-top-1-then-switch; on single-object CR all hedging arms are within +/-3 points of one another.",
+      "kill_condition": "The method beats those baselines by more than 3 points on SR, MP or CR, which would mean its gain comes from something other than hedging over the brain's answer (for example a better approach trajectory) and invalidates the attribution."
+    }
+  ],
+  "limitations": [
+    "The mechanism decomposes into known parts: answer-branching over a slow LLM with a latency quantile [2407.08735], belief-weighted continuations [2101.06547][1503.07619], and shared-prefix pursuit of moving candidates [2610.17003]. The contribution is the belief source, the reveal-time conditioning and the evaluation protocol, a narrow systems delta better matched to RA-L, ICRA or CoRL than to a main-track vision venue unless the committed effects hold.",
+    "The brain is needed only because the track table is class-agnostic and DOM-Sem names targets through commonsense; the privileged-label script solves the condition, and Astra's advantage over an 8B VLM on 16 household categories in small texture-augmented renders may be small, so the pilot gate may close the line.",
+    "Only one brain decision per trial, taken at motion onset and replayed across latencies, is studied; mid-episode re-queries, multi-step plans, and spatial or relative commands (the static-table 'move 5 cm left' failure) are not addressed.",
+    "DOM's speeds are calibrated for sub-second VLA latency; at multi-second latency contested trials may be rare at default speeds, so long-latency claims rest on DOM's slower commented band and an episode horizon extended to 10 s + D.",
+    "Simulation only, with simulator-state tracks and a scripted demonstrator; perception noise, tracker failures and real API latency under load on hardware are untested."
+  ]
+}
