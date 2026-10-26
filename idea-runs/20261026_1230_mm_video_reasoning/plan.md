@@ -19,3 +19,4 @@ state: `forming`
 - `forming`: gap_finder axis 5 (video generation models as visual reasoners) returned, 2 gaps.
 - `forming`: gap_finder axis 3 (temporal reasoning over long videos) returned, 2 gaps.
 - `forming`: gap_finder axis 6 (efficient and adaptive test-time reasoning) returned, 2 gaps.
+- `forming`: gap_finder axis 4 (visual grounding and faithfulness of multimodal CoT) returned, 2 gaps.
