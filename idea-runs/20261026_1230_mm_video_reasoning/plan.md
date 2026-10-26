@@ -16,3 +16,5 @@ state: `forming`
 ## History
 - `forming` at turn 1: wrote problem.md; spawning gap_finder on axes 1–6 in parallel (independent axes).
 - `forming`: gap_finder axis 2 (thinking with images) returned, 2 gaps.
+- `forming`: gap_finder axis 5 (video generation models as visual reasoners) returned, 2 gaps.
+- `forming`: gap_finder axis 3 (temporal reasoning over long videos) returned, 2 gaps.
