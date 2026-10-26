@@ -20,3 +20,4 @@ state: `forming`
 - `forming`: gap_finder axis 3 (temporal reasoning over long videos) returned, 2 gaps.
 - `forming`: gap_finder axis 6 (efficient and adaptive test-time reasoning) returned, 2 gaps.
 - `forming`: gap_finder axis 4 (visual grounding and faithfulness of multimodal CoT) returned, 2 gaps.
+- `forming`: gap_finder axis 1 (RLVR) returned, 2 gaps. All 6 axes mapped (12 gaps); check_run passes. Writing SURVEY_zh.md for the user; ideation waits for the user to pick a direction.
