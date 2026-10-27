@@ -14,3 +14,4 @@ state: `forming`
 
 ## History
 - `forming` at turn 1: wrote problem.md; spawning gap_finder on axes 1–5 in parallel (independent axes).
+- `forming`: gap_finder axis 5 (hardware-efficient algorithms) returned, 2 gaps.
