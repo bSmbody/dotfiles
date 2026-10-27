@@ -17,3 +17,4 @@ state: `forming`
 - `forming`: gap_finder axis 5 (hardware-efficient algorithms) returned, 2 gaps.
 - `forming`: gap_finder axis 3 (hybrid architectures) returned, 2 gaps.
 - `forming`: gap_finder axis 4 (memory matrix update rules) returned, 2 gaps.
+- `forming`: gap_finder axis 2 (variant attention pruning) returned, 2 gaps.
