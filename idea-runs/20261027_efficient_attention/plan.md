@@ -19,3 +19,4 @@ state: `forming`
 - `forming`: gap_finder axis 4 (memory matrix update rules) returned, 2 gaps.
 - `forming`: gap_finder axis 2 (variant attention pruning) returned, 2 gaps.
 - `forming`: gap_finder axis 1 (KV cache pruning) returned, 2 gaps. All 5 axes mapped (10 gaps); check_run passes. Wrote SURVEY_zh.md; ideation waits for the user to pick a direction.
+- constraints updated: compute is now ~1 TB H200 (user, 2026-10-27).

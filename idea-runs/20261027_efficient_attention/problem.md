@@ -8,5 +8,5 @@ Every way of cutting attention cost loses information somewhere. Token / KV evic
 
 ## Constraints
 - **Venue and deadline**: none fixed yet. This run is a landscape survey so the user can understand a direction suggested by a senior labmate.
-- **Compute** (assumed from the group's earlier runs, to be confirmed): 2–4 GPUs with 24 GB each, single-node; inference-time methods, light fine-tuning, or distillation / conversion of public models up to ~8B; small-scale pretraining (≤ ~400M parameters) only.
+- **Compute** (updated 2026-10-27 by the user): the senior labmate's H200 cluster, about 1 TB of GPU memory in total (≈8×H200 141 GB). Compute is effectively not the binding constraint: pretraining small-to-mid models, converting / distilling public models up to ~70B, and long-context (128K) fine-tuning are all feasible.
 - **Literature**: no cutoff — search up to today (2026-10-27). arXiv work from the last 12 months counts as prior or concurrent work.
