@@ -1,0 +1,437 @@
+{
+  "title": "Fewer Full-Attention Layers from the Failures On-Policy Training Leaves Behind: Verified Repair Sets for Hybrid Reasoning Models",
+  "topic_relevance": {
+    "sub_topic": [
+      "Hybrid architectures mixing a few full-attention layers with linear-attention (Gated DeltaNet) layers",
+      "Transformer-to-hybrid conversion and on-policy distillation of reasoning models",
+      "KV-cache reduction for long chain-of-thought decoding"
+    ],
+    "primary_focus": [
+      "Cutting the number of full-attention layers, and so the KV cache that grows with every generated token, below the fixed every-fourth-layer rule without losing long-CoT accuracy in the shipped (jointly trained) model",
+      "Choosing which layers keep full attention from verified per-failure repair sets on the student's own long-CoT rollouts",
+      "Testing first whether allocation still matters after on-policy training, and comparing against the strongest cheap on-policy allocators at matched GPU-hours"
+    ]
+  },
+  "one_sentence_thesis": "Choose full-attention layers by repairing the reasoning failures a hybrid still makes on its own long traces, so it keeps accuracy with fewer cache-growing layers.",
+  "core_problem": {
+    "problem_statement": "Converted reasoning hybrids keep full attention in a hand-set number of layers chosen by rule [2609.31947] or by signals computed on prefixes the hybrid never generated: teacher-forced KL on DCLM [2512.20569], passkey hidden-state alignment [2606.30562], KL+cost at 4K [2605.20936], answer NLL [2606.27791], commonsense ablation [2604.22050], teacher-trace likelihood [2604.19877], or 128-token drafts of the teacher itself [2505.22135]. Because the KV cache of those layers is the only memory that grows during long chain-of-thought, a hybrid that keeps more full-attention layers than its residual failures need pays for them at every generated token, and nobody has tested whether fewer, better-placed layers can match the fixed rule after on-policy training.",
+    "why_it_matters": [
+      "In a hybrid, only the retained full-attention layers keep a KV cache that grows with length; Opal's 9-of-36 layout is about 4x lighter than full attention at 128K [2609.31947], and KV compression work for hybrids targets exactly these layers [2610.14754]. Each further layer removed cuts the growing cache by 1/9 of what remains at 9 layers.",
+      "Opal's ratio is never varied: its SWA baselines keep the same 1:3 ratio 'to approximately match long-context memory budgets' [2609.31947], so whether long-CoT needs 9 exact layers, or only a few in the right places, is unknown.",
+      "There is real headroom on long reasoning: after 2B OPD tokens the 9/36 Qwen3-4B hybrid reaches AIME'24 pass@1 52.5 and AIME'25 40.4 against the teacher's 73.8 and 63.7, while MATH-500 is near ceiling (92.0 vs 96.4) [2609.31947].",
+      "But on-policy training can let a model route around missing long-range access: RL makes pure sliding-window attention with no global layer nearly match full attention on math [2606.11634]. So whether allocation matters at all after on-policy training is itself an open, testable question, and the prior work never measures it.",
+      "Selection signals computed off the student's own generations can mislead for generation: perplexity hides 5-21 pp generation gaps [2603.26556], Super Apriel lists likelihood-versus-generation divergence as a limitation [2604.19877], LayerBoost concedes its benchmark sensitivity may miss long-form reasoning [2604.22050], and static per-layer scores miss interactions [2601.11667][2307.15771]."
+    ],
+    "concrete_example": "Illustrative scenario (not a measured result): Qwen3-4B is converted with full attention at every fourth layer. On an AIME problem the hybrid derives an intermediate value early, needs it again thousands of tokens later, and continues from a blurred copy held in GDN state; the teacher reading the same student prefix puts its mass on the right token. Two layers that do this look-up would have fixed it, but neither is among the nine kept by rule, while several kept layers repair nothing the trained student still gets wrong. A selector scored on DCLM KL or passkey documents never sees this position, so it can neither drop the useless layers nor add the needed ones; the deployed model keeps nine layers of growing KV and still fails the problem."
+  },
+  "key_novelty": {
+    "main_idea": "Verified repair-set allocation for full-attention K-reduction in on-policy-trained hybrids",
+    "explanation": [
+      "Keep a converted model whose all-exact setting is the teacher itself, so every reasoning failure it still makes on its own traces has a guaranteed repair that can be shrunk by executed tests.",
+      "Give exact attention only to the few layers whose restoration actually repairs the most remaining failures, retrain on fresh rollouts, and stop when no layer repairs enough of what is left.",
+      "Judge the result where it counts: after the training that ships, with fewer full-attention layers than the every-fourth-layer rule, against random allocations and strong cheap on-policy allocators at equal GPU-hours."
+    ]
+  },
+  "problem_definition": {
+    "formal_setting": "Teacher Transformer pi_T with L = 36 layers. Supernet M_theta: layer l has the teacher's frozen exact attention E_l and a trainable GDN mixer G_l; all shared weights are frozen at teacher values, so pi_{all} = pi_T. An allocation A subset of {1..L}, |A| = K, gives pi_A. Mixer-only on-policy training minimizes E_{y ~ pi_P} sum_t KL(pi_P(.|y_<t) || pi_T(.|y_<t)) over sampled placements P that contain A. A failure event e = (y_<t, t) is a prefix of a wrong-answer trace from pi_A at the first position whose reverse KL exceeds kappa, kept only if 8 teacher continuations from y_<t succeed at least delta more often than 8 student continuations. Repair predicate psi_e(S) = [KL(pi_{A union S}(.|y_<t) || pi_T(.|y_<t)) <= tau], with psi_e(all remaining layers) = true. A repair set R_e is 1-minimal under executed tests; monotonicity is not assumed but its violation rate is measured. Greedy growth commits the candidate c (a layer or group of <= 3 layers from found repair sets) maximizing verified coverage cov(c) = mean_e psi_e(c), retrains, re-collects events, and stops at the first round with max_c cov(c) < s_min. This yields nested allocations A_1 subset A_2 subset ... and a stopping size K_stop. Let F(A) be the AIME avg@32 accuracy of the model obtained by joint on-policy distillation of all weights on allocation A (the shipped model). Goal: find K_stop <= 6 and A with F(A) - F(Opal 9/36) >= -epsilon (non-inferiority, epsilon = 2 pp) at matched total GPU-hours, where KV bytes per generated token scale with K, so K <= 6 means a cache at least 33% smaller.",
+    "inputs": "A pretrained reasoning Transformer (Qwen3-4B, thinking mode), a decontaminated pool of math prompts with verifiable answers split into event-mining, dev and training pools, the GDN mixer family with existing kernels, and a total GPU-hour budget that every compared method also receives.",
+    "outputs": "Nested allocations of exact-attention layers with a data-chosen size K_stop, the jointly trained shipped hybrid at K_stop (and at K = 4, 6 for the curve), its KV memory and throughput, and diagnostics: random-allocation spread after joint OPD, repair-set size distribution, monotonicity-violation rate, benign-fork share, KL-repair versus answer-repair agreement, and K and layer-set stability across seeds and stopping hyperparameters."
+  },
+  "key_terms": {
+    "Allocation (placement)": "The set of layers that run exact full attention; the others run the linear mixer. Its size K sets how much KV cache grows per generated token.",
+    "K-reduction": "Matching a reference model's accuracy with fewer full-attention layers; here, matching Opal's 9 of 36 with at most 6, i.e. at least a third less growing KV cache.",
+    "Supernet": "One model in which every layer carries both its original exact attention and a linear replacement, so any mix can be run without retraining [2604.19877][2508.15884].",
+    "Teacher-anchored": "Shared weights and exact-attention weights are frozen at the teacher's values during allocation, so the all-exact allocation is exactly the teacher.",
+    "On-policy distillation (OPD)": "The student samples its own rollouts and a frozen teacher scores every token with reverse KL, so the student trains on states its own errors produce [2609.31947].",
+    "Joint OPD (shipped model)": "On-policy distillation of all weights on a fixed allocation, as in Opal's final stage; the model a user would deploy [2609.31947].",
+    "Failure event": "On a student trace that ends wrong, the first position where the teacher reading the same student prefix sharply disagrees, kept only if teacher continuations from there succeed clearly more often than student ones.",
+    "Benign fork": "A high-disagreement position that is just a choice between valid reasoning paths; high-entropy fork tokens are common in long CoT [2506.01939].",
+    "Repair test": "One prefill of the fixed event prefix with some extra layers switched to exact attention; it passes if the next-token distribution returns within tau of the teacher's.",
+    "Repair set": "A set of layers whose restoration passes the repair test and from which no single layer can be removed without failing, as established by executed tests.",
+    "Backward elimination with revisit": "Remove layers one at a time while the test still passes, then re-test every single removal until none passes; what ddmin reduces to on a list this short, with 1-minimality from executed tests [2408.04735].",
+    "Monotonicity violation": "A case where a set repairs an event but a superset of it does not; downstream compensation [2307.15771] can cause it, and its rate decides whether verified rather than inferred coverage matters.",
+    "Verified coverage": "For a candidate layer or group, the share of residual events whose repair test actually passes with it added, counted by running the tests, never inferred from set inclusion.",
+    "Random-allocation spread": "The range of shipped-model accuracy across several random allocations of the same size K; if it is no larger than seed noise, no allocation method can matter at that K.",
+    "avg@32": "Accuracy averaged over 32 sampled solutions per problem, which lowers sampling noise on a 30-problem benchmark like AIME.",
+    "Pipeline seed": "An independent run of everything after the teacher checkpoint (supernet warm-up, mixer-only OPD rounds, event sampling, reduction order, joint OPD and evaluation sampling)."
+  },
+  "related_work": [
+    {
+      "sub_area": "Off-policy and teacher-side layer selection for Transformer-to-hybrid conversion",
+      "what_it_does": "One-swap greedy addition scores each layer by the drop in teacher-forced KL on DCLM after brief re-distillation and keeps the top K [2512.20569]. FlashMorph trains one scalar gate per layer, mixing a frozen exact path and a linear branch, on hidden-state L2 at passkey answer positions with an L1 penalty, then keeps the top-K gates [2606.30562]. DASH searches {Full, Window, Linear} logits with teacher-forced KL plus a cost term at 4K, needing a lambda sweep to hit a budget [2605.20936]. ConSA learns hard-concrete L0 masks with an augmented Lagrangian that enforces a target sparsity, trained on the LM loss, and finds that unconstrained scalar gates with post-hoc ranking fail to differentiate units [2606.18056]. GenDistill uses perplexity beam search [2603.26556], HALO keeps top recall/commonsense one-swap ratios with k = L/4 [2601.22156], Apriel-H1 uses MMLU leave-one-out probes [2511.02651], NLL-guided selection toggles single layers scored by teacher-forced answer NLL [2606.27791], LayerBoost uses single-layer commonsense ablation plus a keep/revert search at a fixed 33% budget [2604.22050], and retrieval-aware distillation ablates teacher heads on a synthetic retrieval probe [2602.11374]. RAD is the one generation-based signal: self-speculative throughput of the teacher with layers skipped, 128-token drafts, BO once before distillation, ratio fixed at 50% [2505.22135].",
+      "open_gap": "All signals are computed on fixed text, synthetic probes or the teacher's own short drafts, never on the long rollouts of the trained hybrid; budgets are hand-set; none evaluates long-CoT reasoning or asks how few full-attention layers the trained student needs.",
+      "citations": [
+        "2512.20569",
+        "2606.30562",
+        "2605.20936",
+        "2606.18056",
+        "2603.26556",
+        "2601.22156",
+        "2511.02651",
+        "2606.27791",
+        "2604.22050",
+        "2602.11374",
+        "2505.22135"
+      ]
+    },
+    {
+      "sub_area": "Supernet and outcome-driven placement search",
+      "what_it_does": "PostNAS trains a super network with sampled linear/full paths and frozen MLPs, then beam-searches placements by task score on short few-shot tasks under a given budget [2508.15884]. DtR distills drop-in linear blocks independently and greedily replaces blocks by end-task validation score with a tolerance stop, showing that greedy validation-driven replacement beats static impact scores by 3.5-3.8 pp at 10/28 because of layer interactions [2601.11667]. Super Apriel trains a frozen-shared-weight 15B supernet, scores placements by teacher-forced likelihood of teacher-generated MATH500/AIME traces with an order<=3 interaction surrogate solved by DP, has no on-policy stage, and names RL with full-attention supervision as future work [2604.19877].",
+      "open_gap": "Placements are scored by one aggregate number per configuration before or without on-policy training; none localizes where on the student's own trace a failure happens or which layers would prevent it, and DtR's outcome criterion has never been applied to long-CoT accuracy of an on-policy-trained student.",
+      "citations": [
+        "2508.15884",
+        "2601.11667",
+        "2604.19877"
+      ]
+    },
+    {
+      "sub_area": "On-policy training of converted or constrained architectures for long reasoning",
+      "what_it_does": "Opal converts Qwen3-4B and MiMo-7B-RL keeping every fourth layer exact and recovers long-CoT reasoning by prolonged on-policy reverse-KL distillation with rollout-length doubling to 32K, identifying compounding drift from student-induced recurrent states as the failure of off-policy distillation; it never varies the ratio [2609.31947]. SWARR converts every layer to sliding-window attention and shows on-policy RL closes most of the SFT gap on math, with RL-trained trajectories becoming more local [2606.11634]. A 72-hybrid sweep shows recall rising with full-attention share and leveling near 3:1 while LM loss stays flat [2507.06457]. Layer-ordering theory proves the optimal hybrid ordering is task-specific and that layers act as motifs [2610.18104].",
+      "open_gap": "On-policy signals are used only to train weights; the allocation and its size stay fixed, and no work measures whether allocation still matters after on-policy training or uses the residual failures to cut K.",
+      "citations": [
+        "2609.31947",
+        "2606.11634",
+        "2507.06457",
+        "2610.18104"
+      ]
+    },
+    {
+      "sub_area": "Test-case reduction under non-monotone predicates",
+      "what_it_does": "ddmin shrinks a failure-inducing list to a 1-minimal sublist whose terminal property is established by executed single-element tests; revisit-skipping variants can miss reductions that wrapper frameworks recover by iterating to a fixpoint [2408.04735]. PMA treats monotonicity as an empirical property, counting compliances and violations during a run, and notes that global minimality is NP-complete without monotonicity [2506.11614].",
+      "open_gap": "These tools have not been applied to architecture allocation, where elements are layers, the test is a forward pass on a model's own prefix, and the all-removed state must be a valid specification.",
+      "citations": [
+        "2408.04735",
+        "2506.11614"
+      ]
+    },
+    {
+      "sub_area": "Component restoration and self-repair in language models",
+      "what_it_does": "Ablating one attention layer makes a later layer compensate (the Hydra effect), so ablation-based and direct-effect importance can be nearly uncorrelated [2307.15771]. Per-head self-repair is broad but noisy and token-dependent [2402.15390].",
+      "open_gap": "They show that single-component importance and monotone combination are unreliable in a fixed model, but do not turn restoration tests into an allocation method for a hybrid or measure how often non-monotone repair occurs in one.",
+      "citations": [
+        "2307.15771",
+        "2402.15390"
+      ]
+    }
+  ],
+  "method": {
+    "high_level_flow": [
+      "Supernet construction: teacher -> frozen exact paths + attention-transferred GDN mixers -> off-policy warm-up of mixers only",
+      "Mixer-only on-policy training: placement sampling across sizes -> student rollouts -> token-level reverse KL from frozen teacher -> update GDN mixers only",
+      "Event mining: rollouts under current allocation -> wrong-answer traces -> first sharp KL disagreement -> answer-flip filter (8 vs 8 continuations) -> 1,000 events per round",
+      "Diagnosis: per event, start from all-exact (= teacher) -> backward elimination with revisit to fixpoint -> 1-minimal repair set + logged monotonicity violations",
+      "Allocation: shortlist layers and groups of <= 3 from repair sets -> verified coverage by direct repair tests -> commit best -> back to mixer-only OPD -> stop at first round with best coverage < s_min",
+      "Shipping and evaluation: nested allocations at K = 4, 6, K_stop -> joint OPD of all weights (Opal Stage 3 recipe) -> AIME avg@32, retrieval, KV memory and throughput versus Opal 9/36 at matched total GPU-hours"
+    ],
+    "modules": [
+      {
+        "module": "Teacher-anchored supernet",
+        "role": "Makes any exact/linear mix runnable without retraining, with the all-exact mix identical to the teacher.",
+        "model": "Qwen3-4B (thinking) teacher, 36 layers; per layer: frozen original softmax attention plus a Gated DeltaNet mixer initialized by attention-weight transfer; embeddings, MLPs, norms and head frozen.",
+        "inputs": [
+          "teacher checkpoint",
+          "general and reasoning text for warm-up"
+        ],
+        "outputs": [
+          "supernet with trainable GDN mixers only"
+        ],
+        "notes": "Follows Super Apriel's frozen-shared-weight design, where mixer-only training kept reasoning [2604.19877]; unlike Super Apriel the exact paths are frozen too, so all-exact equals the teacher exactly rather than approximately [2604.19877]. Opal's Stage 1 already trains GDN alone with everything else frozen [2609.31947]. Unchanged from v1."
+      },
+      {
+        "module": "Mixer-only on-policy distillation",
+        "role": "Trains GDN mixers on the student's own long rollouts so residual failures are those on-policy weight training alone does not remove.",
+        "model": "Opal-style OPD: student rollouts, dense token-level reverse KL from the frozen teacher, rollout-length doubling on KL plateau up to 32K [2609.31947].",
+        "inputs": [
+          "event-pool prompts",
+          "current allocation A",
+          "placement sampler"
+        ],
+        "outputs": [
+          "updated GDN mixers",
+          "rollouts with per-token teacher log-probs (reused for event mining)"
+        ],
+        "notes": "Each batch samples a placement that contains A with size drawn uniformly, avoiding the self-reinforcing specialization Super Apriel reports for targeted sampling [2604.19877]. Prompts come from the pools Opal uses for OPD (DeepScaleR, DAPO-Math-17K), 13-gram decontaminated against evaluation sets as in Opal [2609.31947], split into disjoint event-mining, dev and training pools."
+      },
+      {
+        "module": "Event miner with answer-flip filter",
+        "role": "Turns wrong-answer traces into decision-relevant failure positions and discards benign forks.",
+        "model": "No new model; teacher and student log-probs plus short regenerations.",
+        "inputs": [
+          "wrong-answer rollouts under A",
+          "teacher log-probs"
+        ],
+        "outputs": [
+          "1,000 failure events per round",
+          "benign-fork share"
+        ],
+        "notes": "Candidate = first token whose reverse KL exceeds kappa (a high quantile of per-token KL on wrong traces). Because high-entropy fork tokens are frequent in long CoT [2506.01939], a candidate is kept only if 8 teacher continuations succeed at least delta = 3/8 more often than 8 student continuations. Revision change: k raised from 4 to 8 per side (v1's success rates could take only five values), and events per round cut from 3K to 1K to pay for it; at a 10% coverage share, 1,000 events give a binomial standard error near 1 pp, enough to rank candidates against s_min = 5%."
+      },
+      {
+        "module": "Repair test",
+        "role": "Deterministic predicate deciding whether a set of extra exact layers repairs an event.",
+        "model": "One supernet prefill of the fixed prefix under A union S; flash-linear-attention for GDN layers and FlashAttention for exact ones; no new kernel.",
+        "inputs": [
+          "event prefix",
+          "candidate set S"
+        ],
+        "outputs": [
+          "PASS / FAIL"
+        ],
+        "notes": "Passes if reverse KL at the event position is <= tau (median per-token KL of the same model on correct traces). With all remaining layers exact the model is the teacher, so every reduction starts from a pass. Activations below the lowest switched layer are cached across tests. Revision change: v1's 'unclear' band is dropped; robustness to tau is tested by the stopping-hyperparameter sweep instead."
+      },
+      {
+        "module": "Repair-set reducer",
+        "role": "Finds a 1-minimal set of layers whose restoration repairs each event, without assuming monotone repair, and measures how non-monotone repair is.",
+        "model": "Backward elimination over currently linear layers in one seeded random order, then a revisit pass to fixpoint (what ddmin reduces to on <= 36 elements).",
+        "inputs": [
+          "event",
+          "repair test",
+          "current allocation"
+        ],
+        "outputs": [
+          "repair set R_e (1-minimal; upper bound on the true minimum)",
+          "monotonicity-violation log"
+        ],
+        "notes": "1-minimality holds by executed single-layer tests without monotonicity; the revisit pass recovers reductions that interactions hide [2408.04735]. Global minimality is NP-complete without monotonicity, so R_e is reported as an upper bound [2506.11614]. Non-monotonicity is expected from downstream compensation [2307.15771]; for a random sample of events every superset of R_e along the elimination path is re-tested to estimate the violation rate. Revision change: PMA-gated skips and three orderings per event are dropped; they only saved diagnosis time and would stay only if they changed final accuracy, which v1 never predicted."
+      },
+      {
+        "module": "Verified-coverage allocator and single stopping rule",
+        "role": "Chooses the next layer or small group to make exact, and decides K.",
+        "model": "Greedy commit over a shortlist; coverage counted by re-running every event's repair test under A plus the candidate.",
+        "inputs": [
+          "repair sets",
+          "events",
+          "repair test"
+        ],
+        "outputs": [
+          "committed candidate",
+          "nested allocation A",
+          "stop decision",
+          "coverage trajectory"
+        ],
+        "notes": "Shortlist = single layers and groups of up to 3 layers that occur in found repair sets. Non-monotone interactions can lower a candidate's verified count but not inflate it. After each commit, mixer-only OPD continues and events are re-collected under the new A, since the failure distribution depends on the current policy [1011.0686]. Revision change: the only stopping rule is 'best verified coverage < s_min = 5%'; v1's second rule (median repair set > 4) is removed because it contradicted the pilot kill (median <= 12 of 36). The pilot kill is now the same rule evaluated in round 1, so a pilot that passes always commits at least one candidate. The loop runs to K_max = 9 regardless of stopping (logging coverage), so the effect of s_min on K is read off one trajectory."
+      },
+      {
+        "module": "Shipping stage",
+        "role": "Produces the deployable hybrid on which every headline claim is measured.",
+        "model": "Allocation frozen; joint OPD of all weights with the Opal Stage 3 recipe for 1B student-generated tokens [2609.31947].",
+        "inputs": [
+          "nested allocations A_4, A_6, A_{K_stop}",
+          "supernet mixers"
+        ],
+        "outputs": [
+          "shipped hybrid per K",
+          "frozen-supernet versus shipped accuracy gap per allocation"
+        ],
+        "notes": "No diagnosis runs after joint training because the all-exact model is then no longer the teacher. Every in-supernet baseline allocation gets the identical shipping stage. Revision change: the shipped model, not the frozen supernet, now carries every headline claim."
+      },
+      {
+        "module": "Allocation-matters gate (runs first)",
+        "role": "Tests whether allocation changes shipped-model accuracy at small K before any method comparison.",
+        "model": "5 random allocations at each of K = 4 and K = 6, plus the uniform interleave at those K with 3 pipeline seeds, all through the same shipping stage.",
+        "inputs": [
+          "supernet after warm-up and round-0 mixer-only OPD"
+        ],
+        "outputs": [
+          "random-allocation spread per K",
+          "seed-to-seed range of one fixed allocation",
+          "choice of the main comparison size K*"
+        ],
+        "notes": "SWARR shows on-policy training can let a model route around missing long-range access [2606.11634], so this is not assumed. K* = the K in {4, 6} whose random spread is largest relative to seed noise; if neither passes the gate, method comparisons stop (see falsifiable predictions). New in v2."
+      }
+    ],
+    "novel_architectural_elements": [
+      "Exact paths frozen at teacher values alongside trainable linear paths in every layer, making the all-exact supernet configuration identical to the teacher and thus a valid starting point for every per-event reduction.",
+      "A closed diagnose-commit-retrain loop that grows a nested sequence of allocations from verified per-event repair sets on the student's own prefixes, interleaved with mixer-only on-policy training and fresh rollouts, so one run yields allocations for every K up to the stopping size.",
+      "Coverage-based commitment computed from executed repair tests per event, rather than from a whole-placement score, a teacher-forced proxy, or a fitted interaction surrogate."
+    ],
+    "pseudocode": "# Verified repair-set allocation, v2 (C14). Every number is a planned setting, not a result.\n# Supernet: layer l has the teacher's frozen exact attention E_l and a trainable GDN mixer G_l.\n# Embeddings, MLPs, norms and head are frozen at teacher values, so allocation 'all exact' == teacher.\n\ndef build_supernet(teacher, seed):\n    for l in layers(teacher):\n        l.exact = freeze(l.attention)              # never trained during allocation\n        l.linear = init_gdn_from(l.attention)       # attention-weight transfer, trainable\n    freeze(embeddings, mlps, norms, lm_head)\n    warm_up_linear_mixers(off_policy_kl, placements=sample_across_sizes, seed=seed)\n\ndef mixer_only_opd(net, A, steps):\n    for batch in prompts(steps):                       # event pool, disjoint from dev and eval\n        P = sample_placement(include=A, sizes=uniform_over_sizes)\n        y = rollout(net[P], batch)                      # student samples its own long trace\n        update(linear_mixers, sum_t reverse_kl(net[P](y[:t]), teacher(y[:t])))\n\ndef find_events(net, A, n_events=1000):\n    events = []\n    while len(events) < n_events:\n        y = rollout(net[A], next_prompt())\n        if is_correct(y): continue\n        t = first_position(reverse_kl(net[A](y[:t]), teacher(y[:t])) > kappa)\n        if t is None: continue\n        # answer-flip filter: keep only decision-relevant positions (k=8 per side)\n        if success(teacher, y[:t], k=8) - success(net[A], y[:t], k=8) < delta: log_benign(y, t); continue\n        events.append((y[:t], t))\n    return events\n\ndef repair_test(net, A, S, prefix, t):                 # one prefill, deterministic\n    return reverse_kl(net[A | S](prefix), teacher(prefix)) <= tau\n\ndef reduce_event(net, A, prefix, t):\n    # v2: what ddmin reduces to on <=36 elements: one-at-a-time backward elimination with caching\n    S = set(linear_layers(A))                           # all remaining exact == teacher: passes by construction\n    for l in random_order(S):                           # one seeded order (v1's 3 orders dropped)\n        if repair_test(net, A, S - {l}, prefix, t): S = S - {l}\n    while True:                                         # revisit pass to fixpoint -> 1-minimal by executed tests\n        removable = [l for l in S if repair_test(net, A, S - {l}, prefix, t)]\n        if not removable: return S\n        S = S - {removable[0]}\n    # every superset test that monotonicity would have implied is also logged -> violation rate\n\ndef allocate(teacher, seed, K_max=9):\n    net = build_supernet(teacher, seed); A = []; trajectory = []\n    for r in range(K_max):\n        mixer_only_opd(net, set(A), steps=round_steps)\n        events = find_events(net, set(A))\n        sets = [reduce_event(net, set(A), p, t) for (p, t) in events]\n        shortlist = single_layers_and_groups_up_to_3(sets)\n        cover = {c: mean(repair_test(net, set(A), c, p, t) for (p, t) in events) for c in shortlist}\n        c_best = argmax(cover)                          # verified, never inferred from set inclusion\n        trajectory.append((list(A), cover[c_best], size_histogram(sets), violation_rate()))\n        if cover[c_best] < s_min: break                 # the ONLY stopping rule; round 1 == pilot kill\n        A += sorted(c_best)\n    return A, trajectory                                # nested prefixes A_1 c A_2 c ... give every K <= |A|\n\ndef finish_and_evaluate(net, A_K, seed):\n    model = joint_opd(net[A_K], tokens=1e9, seed=seed)  # Opal Stage-3-style, all weights; the shipped model\n    return aime_avg_at_32(model), math500(model), gpqa(model), niah_ruler(model), kv_and_throughput(model)\n\n# Experimental order (see proposed_evaluation): (1) random-allocation spread gate at K in {4,6};\n# (2) pick K* = K with the largest spread; (3) 3 full-pipeline seeds of ours and of the strongest\n# baselines at K*, plus ours at K_stop and Opal 9/36 at matched total GPU-hours; paired bootstrap.\n",
+    "design_choices": [
+      "Headline in the shipped model at reduced K (revision change, AC fix 1): v1 claimed accuracy at matched K in the frozen supernet, which shows no memory saving; v2 claims that after joint OPD, K <= 6 matches Opal 9/36 on AIME avg@32, a cache at least 33% smaller.",
+      "Gate on allocation spread first (AC fix 2): the main comparisons move to the K in {4, 6} where random allocations differ most after joint OPD; if they do not differ, no allocation method can matter there, and the paper says so instead of reporting a noise-level gain.",
+      "AIME avg@32 over 60 problems as the load-bearing benchmark: AIME has 21-23 pp of pass@1 headroom to the teacher while MATH-500 is within 4.4 pp [2609.31947], so MATH-500 is reported but carries no claim.",
+      "Freeze shared and exact-attention weights during allocation: system, specification and all-removed state agree by construction [2604.19877]; the cost of this choice is visible as the frozen-versus-shipped gap, reported per allocation.",
+      "Backward elimination with revisit instead of a hitting set: repair need not be monotone, and 1-minimality is established by executed tests [2408.04735]. Revision change (AC fix 4): PMA, the unclear band and multiple orderings are dropped; with at most 36 layers the reduction is cheap next to OPD, and none of them was predicted to change accuracy.",
+      "Verified coverage rather than coverage inferred from set inclusion, kept because the measured violation rate decides whether it matters; the ablation 'inferred coverage' tests that directly on final accuracy.",
+      "One stopping rule shared with the pilot kill (AC fix 5): best verified coverage < s_min; K is read from a full trajectory to K_max = 9 so its sensitivity to s_min costs nothing, and tau and kappa variants are rerun.",
+      "Matched total GPU-hours for every comparison: all time from the teacher checkpoint to the shipped model counts (warm-up, mixer-only OPD rounds, event mining, diagnosis, joint OPD); Opal 9/36 is trained with its own dedicated recipe and its OPD stage extended until it uses the same GPU-hours, and the whole allocation run is charged to every K taken from it.",
+      "Re-collect rollouts after every commit: the failure distribution depends on the current allocation [1011.0686]."
+    ],
+    "theoretical_grounding": "The search part has a precise guarantee and the allocation part has none. For each event, psi_e is a deterministic predicate (fixed prefix, no sampling) with psi_e(all) = true because pi_all = pi_T, so backward elimination from the full set always starts from a pass and terminates with a set from which every single-layer removal has been tested and fails: 1-minimality that does not need monotonicity, with the true minimum NP-complete to find and the reported set an upper bound [2408.04735][2506.11614]. Verified coverage is an exact count over tested events, so non-monotone interactions can make greedy commitment suboptimal but never over-credit a candidate. The motivation for allocating on the student's own prefixes is the imitation-learning argument that errors must be measured on the learner's own state distribution [1011.0686], and Opal's finding that long-CoT failure of hybrids comes from compounding drift on student-induced recurrent states [2609.31947]; neither gives a bound for greedy layer commitment, and the revision no longer claims one. Why fewer, targeted layers could match the rule is an empirical hypothesis: if residual failures concentrate in a few look-up layers, layers kept by rule that repair nothing can be dropped, and layer-ordering theory says the best allocation is task-specific [2610.18104]."
+  },
+  "model_details": {
+    "base_model": "Primary: Qwen3-4B in thinking mode (36 layers), the model Opal converts, so its 9/36 hybrid is the direct reference [2609.31947]. Secondary, one seed: MiMo-7B-RL, Opal's second model [2609.31947] (revision change: moved from co-primary to a single-seed replication to fit the seed budget). Linear mixer: Gated DeltaNet via flash-linear-attention.",
+    "training": {
+      "method": "Knowledge distillation in four phases: (1) off-policy warm-up of GDN mixers in the supernet; (2) mixer-only on-policy distillation interleaved with diagnosis and allocation rounds; (3) joint on-policy distillation of all weights on each chosen allocation (the shipped model); (4) for baselines, the same phases with their own allocation rule in phase 2.",
+      "objective_functions": [
+        "Purpose: initialize each GDN mixer to imitate its own exact attention layer. Formally: L_align = sum_l || G_l(h_l) - E_l(h_l) ||^2 on teacher hidden states.",
+        "Purpose: match the teacher's next-token distribution on corpus text during warm-up. Formally: L_off = E_{x ~ D} sum_t KL(pi_T(.|x_<t) || pi_P(.|x_<t)), placements P sampled across sizes.",
+        "Purpose: train on the states the student's own errors create. Formally: L_OPD = E_{P ~ q(.|A)} E_{y ~ pi_P} sum_t KL(pi_P(.|y_<t) || pi_T(.|y_<t)); gradients only to GDN mixers in phase 2, to all weights in phase 3 [2609.31947].",
+        "Purpose (no gradient): decide whether restoring layers repairs an event. Formally: psi_e(S) = [ KL(pi_{A union S}(.|y_<t) || pi_T(.|y_<t)) <= tau ].",
+        "Purpose (baseline only): learn on-policy allocation gates. Formally: L_gate = L_OPD under soft or hard-concrete per-layer mixing of E_l and G_l + augmented-Lagrangian constraint E[sum_l m_l] = K, gates only trained, top-K discretized [2606.30562][2606.18056]."
+      ],
+      "adaptation": "Phase 2: full fine-tuning of the GDN mixers only, every other weight frozen at teacher values. Phase 3: full fine-tuning of all weights by joint OPD (1B student-generated tokens per shipped model, half of Opal's 2B since mixers arrive already OPD-trained; Opal 9/36 gets its full recipe plus extra OPD to match GPU-hours).",
+      "key_hyperparameters": {
+        "status": "planned starting values, fixed before the main runs; none is a result",
+        "candidate_layers": "all currently linear layers (36 at start, A starts empty)",
+        "events_per_round": "1,000 answer-filtered events",
+        "event_threshold_kappa": "99.5th percentile of per-token reverse KL on wrong-answer traces (swept 99th / 99.9th)",
+        "answer_flip_filter": "8 teacher vs 8 student continuations from the event prefix; keep if success gap >= 3/8",
+        "repair_tolerance_tau": "median per-token reverse KL of the same model on correct traces (swept 0.5x, 2x)",
+        "shortlist": "single layers and groups of up to 3 layers that occur in found repair sets",
+        "stopping": "single rule: best verified coverage < s_min = 5% of residual events (read off at 2.5% and 10% from the same trajectory); pilot kill = this rule triggering in round 1",
+        "K_max": "9, so the trajectory always reaches Opal's size for comparison",
+        "prefix_length": "up to 32K tokens, matching Opal's maximum rollout length",
+        "evaluation": "AIME 2024 + 2025 (60 problems), 32 samples per problem with the teacher's thinking-mode sampling settings, up to 32K generated tokens; paired bootstrap over problems (10,000 resamples) on per-problem means pooled over 3 pipeline seeds, with a hierarchical bootstrap over seeds as a robustness check",
+        "margins": "non-inferiority to Opal 9/36: 95% CI lower bound of the difference > -2 pp; superiority over each strong baseline and over uniform at the same K: point gain >= 3 pp with 95% CI lower bound > 0; allocation-matters gate: random range >= 5 pp and >= 2x the seed-to-seed range of the uniform allocation",
+        "seeds": "3 full pipeline seeds for ours, Opal 9/36, uniform at K in {4,6}, and the three strong on-policy baselines and event-localized KL at K*; 1 seed for each random allocation, teacher-forced selectors and other ablations",
+        "compute_plan": "Tier 1 is about 40 shipping runs: gate 16 (10 random + 6 uniform), Opal 9/36 3, ours 6-9 (K = 4, 6, K_stop), strong baselines 9, event-localized KL 3. Opal ran each pipeline on 3-4 H100/H200 GPUs [2609.31947], so two shipping runs fit side by side on the 8xH200 cluster. Per-run GPU-hours are measured in the pilot (Opal does not report them); if tier 1 does not fit in about 2.5 months of cluster time, the dropped items are the K = 4 curve point for baselines and then MiMo, never seeds of the headline comparison.",
+        "diagnosis_cost_estimate": "v1 review planning estimate of 5-30B prefill tokens over all rounds, reduced here by 1K instead of 3K events and one ordering instead of three; to be measured and reported in GPU-hours"
+      }
+    }
+  },
+  "comparison_to_sota": {
+    "related_methods": [
+      "Opal: fixed every-fourth-layer allocation plus long on-policy distillation [2609.31947]",
+      "Super Apriel: frozen-shared-weight supernet, teacher-trace likelihood scoring, order<=3 interaction surrogate, DP [2604.19877]",
+      "FlashMorph: joint per-layer gates mixing frozen exact and linear paths, trained on passkey hidden-state alignment, top-K [2606.30562]",
+      "DASH: differentiable {Full, Window, Linear} search with KL + cost at 4K [2605.20936]",
+      "ConSA: hard-concrete L0 masks with an augmented-Lagrangian budget on LM loss [2606.18056]",
+      "DtR: greedy block replacement by end-task validation score with tolerance stop [2601.11667]",
+      "KL-guided layer selection: one-swap teacher-forced KL on DCLM, top-K [2512.20569]",
+      "NLL-guided selection: single-layer toggles scored by teacher-forced answer NLL [2606.27791]",
+      "RAD: BO over skip sets scored by self-speculative throughput of the teacher's 128-token drafts [2505.22135]",
+      "LayerBoost: single-layer commonsense ablation plus keep/revert search at a fixed 33% budget [2604.22050]",
+      "PostNAS: once-for-all super network and beam search by task score [2508.15884]",
+      "HALO: recall/commonsense one-swap ratios, k = L/4 [2601.22156]"
+    ],
+    "key_differences": [
+      "vs. Opal: Opal uses the on-policy signal only for weights and never varies its 9/36 ratio [2609.31947]; this method uses on-policy residual failures to choose both which layers and how many, and claims the same shipped-model accuracy with K <= 6.",
+      "vs. FlashMorph, DASH and ConSA: they already optimize layer gates jointly under a budget, but on passkey hidden states, teacher-forced KL at 4K or LM loss [2606.30562][2605.20936][2606.18056]; here their gates are retrained with the OPD reverse-KL objective on student rollouts as a baseline, and this method differs by localizing each failure and testing discrete repairs instead of following a smooth gate gradient averaged over all tokens.",
+      "vs. DtR: DtR's greedy outcome criterion is applied here to long-CoT dev accuracy after on-policy training as a baseline [2601.11667]; this method replaces one noisy end-task score per candidate with per-event repair tests that say which layers fix which failure.",
+      "vs. Super Apriel: whole placements scored off-policy by teacher-trace likelihood with a short-range interaction surrogate [2604.19877]; this method uses verified per-event repair sets on the student's own prefixes, retrains on-policy between commits, and freezes exact paths so all-exact is exactly the teacher.",
+      "vs. RAD: RAD's signal is generation-based but comes from the teacher with layers skipped, 128-token drafts, once before distillation, at a fixed 50% ratio [2505.22135]; this method diagnoses the trained hybrid's own 32K-token reasoning traces after on-policy training and sets K from data.",
+      "vs. KL-guided, NLL-guided, LayerBoost, HALO, PostNAS: single-layer or whole-configuration scores on fixed text, short benchmarks or probes with hand-set budgets [2512.20569][2606.27791][2604.22050][2601.22156][2508.15884]; this method scores on long-CoT rollouts and tests layer sets jointly per failure.",
+      "vs. activation patching and restoration analyses: those find components that restore a behavior in a fixed model [2307.15771][2402.15390]; the new part is using verified per-failure repair sets on on-policy traces, in a teacher-anchored supernet, to cut the full-attention budget of a shipped model."
+    ]
+  },
+  "proposed_evaluation": {
+    "evaluation_setting": "Transformer-to-hybrid conversion of Qwen3-4B (thinking) into GDN hybrids, with MiMo-7B-RL as a one-seed replication. Every headline number is measured on the shipped model: each allocation is jointly OPD-trained with the same recipe, and every method receives the same total GPU-hours from the teacher checkpoint to the shipped model. The evaluation runs in three steps. (1) Allocation-matters gate: 5 random allocations at K = 4 and K = 6, plus the uniform interleave at those K with 3 pipeline seeds; K* is the size with the largest spread. (2) Main comparison at K*: ours against the three strongest cheap on-policy allocators and the event-localized-KL ablation, 3 pipeline seeds each. (3) Headline: ours at K_stop <= 6 against the dedicated Opal 9/36 pipeline at matched GPU-hours, 3 seeds each. The load-bearing metric is AIME 2024+2025 avg@32 with paired bootstrap CIs; MATH-500 and GPQA-Diamond are secondary because MATH-500 is near ceiling [2609.31947]; NIAH and RULER up to 32K check that the K-reduction does not cost retrieval; KV memory and throughput are measured in vLLM at 32K and 128K.",
+    "benchmarks": [
+      {
+        "name": "AIME 2024 and AIME 2025 (60 problems, thinking mode, avg@32, up to 32K generated tokens)",
+        "task_type": "long chain-of-thought math reasoning, generation",
+        "newly_constructed": false
+      },
+      {
+        "name": "MATH-500 (thinking mode; secondary, near ceiling)",
+        "task_type": "math reasoning, generation",
+        "newly_constructed": false
+      },
+      {
+        "name": "GPQA-Diamond (secondary)",
+        "task_type": "science reasoning, multiple choice with long CoT",
+        "newly_constructed": false
+      },
+      {
+        "name": "Needle-in-a-haystack 4K-32K: single needle, multi-key, multi-query (Opal's protocol)",
+        "task_type": "long-context retrieval",
+        "newly_constructed": false
+      },
+      {
+        "name": "RULER at 4K-32K",
+        "task_type": "long-context retrieval and aggregation",
+        "newly_constructed": false
+      },
+      {
+        "name": "Residual failure-event set: answer-filtered events with verified repair sets and 8-continuation outcomes",
+        "task_type": "diagnostic set for repair-set size, monotonicity and KL-vs-answer agreement (released with the method; not the main contribution)",
+        "newly_constructed": true
+      }
+    ],
+    "baselines": [
+      "Opal 9/36, dedicated pipeline with its own recipe, OPD extended to matched total GPU-hours, 3 seeds (headline reference) [2609.31947]",
+      "Uniform interleave at K = 4 and K = 6 in the same supernet with the same shipping stage, 3 seeds (Opal's rule at the reduced size)",
+      "Random allocations: 5 per K at K = 4 and K = 6 (allocation-matters gate)",
+      "On-policy differentiable gates (strong baseline): FlashMorph-style per-layer gates mixing the frozen exact path and the GDN path [2606.30562], with DASH-style softmax logits as a variant [2605.20936], trained with the OPD reverse-KL objective on rollouts from the gated student, budget enforced by ConSA-style hard-concrete L0 masks and an augmented Lagrangian so K is exact [2606.18056]; same supernet, same GPU-hours as our allocation phase, 3 seeds",
+      "Greedy allocation by long-CoT dev accuracy (strong baseline): DtR's criterion [2601.11667] applied to the target task, growing A one layer at a time by avg@k accuracy on a held-out dev pool of math problems, with the same mixer-only OPD between commits; dev size and k set so its GPU-hours match ours; 3 seeds",
+      "Greedy whole-trace on-policy KL (strong baseline): commit the layer that most reduces mean reverse KL along fresh student rollouts, same rounds and OPD, 3 seeds",
+      "Single-layer on-policy swap score at the same events, top-K, 1 seed",
+      "Teacher-forced selectors at K*, 1 seed each: KL-guided one-swap [2512.20569], original FlashMorph gates [2606.30562], NLL-guided [2606.27791], Super Apriel-style likelihood + surrogate on the same supernet [2604.19877]",
+      "Teacher (all-exact) as upper reference"
+    ],
+    "main_metrics": [
+      "AIME 2024+2025 avg@32 of the shipped model; paired bootstrap 95% CI of differences against Opal 9/36, uniform at the same K and each strong baseline",
+      "Random-allocation range and seed-to-seed range at K = 4 and K = 6 after joint OPD",
+      "Accuracy versus K curve (K = 4, 6, K_stop, 9) for ours and uniform, with CIs",
+      "Accuracy by generated-length bin with CIs",
+      "MATH-500 and GPQA-Diamond (secondary)",
+      "NIAH (single, multi-key, multi-query) and RULER at 4K-32K",
+      "KV-cache bytes per generated token, peak memory at 32K and 128K, and decoding throughput in vLLM at the chosen K versus 9/36",
+      "Total and per-phase GPU-hours for every method (warm-up, mixer-only OPD, event mining, diagnosis, shipping)",
+      "Frozen-supernet versus shipped-model accuracy for each allocation, with CIs",
+      "Diagnostics: repair-set size distribution, monotonicity-violation rate, benign-fork share",
+      "KL-repair versus answer-repair agreement: success-rate gain under the repair set, and Spearman correlation between KL reduction and success gain",
+      "Stability: chosen K and Jaccard of layer sets across 3 seeds, s_min in {2.5, 5, 10}%, tau in {0.5x, 1x, 2x} and kappa in {99, 99.5, 99.9} percentiles"
+    ],
+    "ablations": [
+      "Event-localized KL without reduction (AC fix 4): score each shortlist candidate by summed reverse-KL reduction at the same filtered event positions and commit greedily; 3 seeds at K*. Isolates repair-set reduction from event localization.",
+      "Inferred coverage (from set inclusion of R_e) instead of verified coverage; measured on final accuracy, not only diagnosis cost.",
+      "No answer-flip filter: all first-KL-spike events.",
+      "Event position: first spike versus second or third high-KL position in the same trace (on the agreement sample).",
+      "One-shot allocation from round 1 only, without re-collection and re-diagnosis.",
+      "Shared weights trained jointly during allocation (all-exact no longer the teacher) versus teacher-anchored freezing.",
+      "Placement sampling during mixer-only OPD: uniform over sizes versus concentrated on the current allocation.",
+      "Stopping-hyperparameter grid (s_min, tau, kappa): effect on K and layer set; only variants that change the set are shipped and evaluated."
+    ]
+  },
+  "falsifiable_predictions": [
+    {
+      "pillar": "Allocation still matters after on-policy training at small K (gate, runs first)",
+      "prediction": "After joint OPD, AIME avg@32 across 5 random allocations spans at least 5 pp at K = 4 or K = 6, and that range is at least twice the seed-to-seed range of the uniform allocation at the same K.",
+      "kill_condition": "At both K = 4 and K = 6 the random range is below 5 pp or below twice the seed range. Then allocation is not a lever after on-policy training at these sizes, consistent with [2606.11634]; method comparisons are not run and the project stops or moves to K <= 3."
+    },
+    {
+      "pillar": "Headline: shipped-model K-reduction",
+      "prediction": "The stopping rule lands at K_stop in {4, 5, 6}, and the shipped model at K_stop is non-inferior to the dedicated Opal 9/36 pipeline at matched total GPU-hours on AIME avg@32 (paired bootstrap 95% CI lower bound of the difference > -2 pp, 3 seeds each), with a growing KV cache at least 33% smaller. At the same K, it beats the uniform interleave by at least 3 pp with CI lower bound > 0.",
+      "kill_condition": "The CI lower bound against Opal 9/36 is at or below -2 pp at every K <= 6, or K_stop > 6, or the uniform interleave at the same K is itself non-inferior to Opal 9/36 (the reduction would then be free and not due to allocation)."
+    },
+    {
+      "pillar": "Repair sets beat the strongest cheap on-policy allocators",
+      "prediction": "At K* and matched GPU-hours, ours exceeds each of on-policy differentiable gates, greedy long-CoT dev-accuracy allocation and greedy whole-trace on-policy KL by at least 3 pp AIME avg@32 in the shipped model, with paired-bootstrap CI lower bound > 0 over 3 seeds.",
+      "kill_condition": "Any of the three is within 3 pp or its difference CI includes 0; that baseline is then the recommended method and the repair-set machinery is not needed."
+    },
+    {
+      "pillar": "Repair sets add information beyond event localization",
+      "prediction": "At K*, ours exceeds event-localized KL without reduction by at least 2 pp AIME avg@32 (CI lower bound > 0, 3 seeds), and at least 5% of superset re-tests on the sampled events fail (non-monotone repair), concentrated in events whose repair set has 2 or more layers.",
+      "kill_condition": "Event-localized KL is within 2 pp, or the violation rate is below 2%. Then reduction and verified coverage are dropped and the paper's method becomes event-localized KL; whether this is reported as a simplification or a negative result depends on the headline prediction."
+    },
+    {
+      "pillar": "Residual failures are localized (pilot, same rule as the stop)",
+      "prediction": "In round 1 the best shortlist candidate verifiably repairs at least 10% of the 1,000 events, and at least 60% of events have repair sets of at most 3 layers.",
+      "kill_condition": "Best round-1 coverage is below s_min = 5%, which is exactly the stopping rule firing at K = 0; the loop would commit nothing, so the method is abandoned before any allocation run."
+    },
+    {
+      "pillar": "KL repair tracks answer repair",
+      "prediction": "On 300 sampled events, adding R_e raises the 8-continuation success rate from the event prefix by at least 0.25 on average, at least twice the gain from single-layer repairs at matched random high-KL positions, and the Spearman correlation between KL reduction and success gain is at least 0.3.",
+      "kill_condition": "Mean success gain is at most 0.1, or not above the matched-random control, or the correlation is below 0.1: the repair predicate then does not track outcomes, and allocation by it is unjustified."
+    },
+    {
+      "pillar": "K is set by the data, not by the stopping knobs",
+      "prediction": "Across s_min in {2.5, 5, 10}%, tau in {0.5x, 1x, 2x} and kappa in {99, 99.5, 99.9} percentiles, and across 3 seeds, K_stop varies by at most 2 layers and the selected sets keep Jaccard >= 0.6 with the default run.",
+      "kill_condition": "K_stop varies by more than 2 layers across the grid, or Jaccard with the default falls below 0.5 for any seed: then 'K from data' rests on hand-set knobs."
+    },
+    {
+      "pillar": "The K-reduction does not cost retrieval",
+      "prediction": "The shipped model at K_stop stays within 5 pp of Opal 9/36 on multi-key NIAH and RULER at 32K.",
+      "kill_condition": "Multi-key NIAH or RULER at 32K drops by more than 5 pp below Opal 9/36: the memory saving is then bought with recall, and the headline must be restated as reasoning-only."
+    }
+  ],
+  "limitations": [
+    "The whole paper depends on the gate: if after joint OPD random allocations at K = 4-6 land within seed noise of each other, as on-policy training's ability to route around missing long-range access suggests may happen [2606.11634], allocation is not a lever at these sizes and no method comparison is meaningful.",
+    "Allocation is still searched in the teacher-anchored, mixer-only supernet, because diagnosis needs all-exact to equal the teacher; the shipped model is jointly trained, and the frozen-versus-shipped gap is measured but cannot be diagnosed after joint training.",
+    "Repair sets are 1-minimal upper bounds under non-monotone repair [2307.15771], the predicate is a one-position KL proxy whose link to answers must be shown by the agreement analysis, and greedy commitment has no optimality guarantee.",
+    "Cost and engineering are large for one student in 4-6 months: about 40 shipping runs in tier 1 plus allocation runs for four methods with 3 seeds; per-run GPU-hours are not known in advance (Opal does not report them [2609.31947]), so MiMo-7B and secondary curve points may be cut.",
+    "Allocation is whole-layer and driven by math prompts only, with generation up to 32K; head-level allocation, other domains such as code, and quality at 64K-128K generation are not tested, although memory is measured at 128K."
+  ]
+}
