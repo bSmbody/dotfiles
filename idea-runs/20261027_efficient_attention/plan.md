@@ -85,3 +85,4 @@ Ids: L1 -> C1, L2 -> C2, L3 -> C3, L4 -> C4, L5 -> C5; revisions get the next fr
 - turn 36: second usage-limit interruption (panel R1/R2/R3 for C14, innovators C18, C19); all resumed from saved transcripts after the 17:30 UTC reset.
 - turn 37: panel C14: R1 3/4/0.25, R2 3/3/0.25, R3 3/4/0.25. Spawned AC.
 - turn 38: C19 created (improves C16): Birnbaum importance of attention-KV blocks (pivotal at the logits when other blocks are evicted at the policy's own rates, GDN path live) [2609.26419, 2205.15466]; only GDN backing counts as a standing discount; eviction-mask fine-tune of GDN layers vs SWAX, LESS, DMS-on-hybrid at matched bytes; pilot kill test on GDN share for entries aged W..H. L2 -> `under_review`; spawned reviewer C19.
+- turn 39: AC for C14: odds 1.8/10, p_core 0.2, risk-adjusted 0.8/10 (3/3/3, no fatal). Below target: per SKILL.md, re-dispatch report_writer with AC fixes_ranked as FOCUS (report_C14_v2), then re-panel.
