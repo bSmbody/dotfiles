@@ -83,3 +83,4 @@ Ids: L1 -> C1, L2 -> C2, L3 -> C3, L4 -> C4, L5 -> C5; revisions get the next fr
 - turn 35: C16 verdict revise(focus=coherence): single-entry total effect is not robust to joint removal (backups are other cached entries evicted in the same round); SWAX [2509.24552] and LESS [2402.09398] uncited. L2 last revise: spawned innovator C19 BUILD_ON C16.
 - turn 36: C17 verdict reject: rounding-level cache differences already re-route 83-90% of long reasoning traces within tens to hundreds of tokens, so twins almost never tie. L1 has now used both KV-axis gaps (gap 1 lineage dead after 3 revises, gap 2 rejected) -> L1 `dead` for this round; no new gap_finder spawned to conserve usage.
 - turn 36: second usage-limit interruption (panel R1/R2/R3 for C14, innovators C18, C19); all resumed from saved transcripts after the 17:30 UTC reset.
+- turn 37: panel C14: R1 3/4/0.25, R2 3/3/0.25, R3 3/4/0.25. Spawned AC.
