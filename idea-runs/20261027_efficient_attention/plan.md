@@ -90,3 +90,4 @@ Ids: L1 -> C1, L2 -> C2, L3 -> C3, L4 -> C4, L5 -> C5; revisions get the next fr
 - turn 41: C19 verdict revise(focus=novelty). L2 lineage C12/C16/C19 used its three revises (C2 rejected on another gap) -> L2 `dead` for this round.
 - turn 42: C18 verdict revise(focus=coherence): exact chunkwise RLS already exists for uniform forgetting with a decaying ridge, so SIFt contributes only bounded conditioning, bought by a threshold that also drops low-energy write components; Bayesian Layer [2605.31163] and Preconditioned DeltaNet [2604.21100] uncited. L3 revise: spawned innovator C20 BUILD_ON C18.
 - turn 43: report_C14_v2.json written (25 ids; AC fixes applied: K<=6 shipped-model headline, random-allocation spread first, PMA/bands/orderings dropped, pilot kill = stopping rule). Spawned fresh panel R1/R2/R3 on v2 -> panel/C14_v2/.
+- turn 44: panel C14 v2: R1 4/4/0.2, R2 4/3/0.3, R3 3/4/0.3. Spawned AC.
