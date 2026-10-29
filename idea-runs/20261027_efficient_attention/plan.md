@@ -97,3 +97,4 @@ Ids: L1 -> C1, L2 -> C2, L3 -> C3, L4 -> C4, L5 -> C5; revisions get the next fr
 
 ## Round 3 (2026-10-29, user request)
 User lifted constraints: wants a GPT prompt for idea generation and/or continued work on our idea, scope free. Wrote gpt_handoff/PROMPT_zh.md (self-contained: scope, 10 verified facts, killed ideas with causes, C14 summary, baseline lists, output format with kill tests and self-review). Continued C14: spawned report_writer for report_C14_v3.json applying the v2 AC fixes_ranked (matched-KV-bytes Pareto vs compression first).
+- round 3: report_C14_v3.json written (39 ids; v2 AC fixes 1-7 applied; week-1 inference-only kill test G0 first). Spawned fresh panel R1/R2/R3 on v3 -> panel/C14_v3/.
