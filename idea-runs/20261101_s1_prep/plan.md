@@ -1,0 +1,4 @@
+# Plan — exhaustive preparation for S1 (2026-11-01)
+User: do all preparatory research and conditions thoroughly so GPT only generates ideas; asked why TaSQ was missed.
+Cause of the miss: scout A ran 19 queries with k=10, the arXiv API fell back to date-ordered web search, and there was no reference snowballing.
+Fix: four parallel recall agents (R1 KV quantization; R2 adaptive / head-wise / token-wise precision and quantization+eviction hybrids; R3 reasoning-specific KV compression, length/cost evaluation, serving integration; R4 reference snowballing from the newest strong papers), each with >=25 queries at -k 30 plus month-by-month sweeps, writing a TSV pool. Then merge, dedupe, and build the final preparation pack and GPT prompt.
