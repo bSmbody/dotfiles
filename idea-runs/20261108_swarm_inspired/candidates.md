@@ -130,3 +130,42 @@ Together they give a merge rule, an order-independence condition, and a cheap co
 
 **Main risk**
 A merged state may be out-of-distribution for the layers that follow, since the model was never trained on a memory holding two divergent lines of thought. Short-horizon heads are also dominated by recent tokens. Together these could make decoding after a merge no better than simply continuing the best branch.
+
+
+### C1 — Adaptive precision refinement: an FP8 working set that follows attention, filled by re-prefilling only the read spans against the INT2 cache
+
+- **Intuition**: An INT2 token can be brought back to full precision without any stored copy and without replaying the whole trace. Its K/V was originally computed from the INT2 cache that is still resident, so re-prefilling just that span against that cache, at a cost proportional to the span length, approximately reproduces the values that were rounded away. Use this as the "refine" step of adaptive mesh refinement: keep the whole trace on a coarse INT2 grid, keep a small set of FP8 patches over the spans current queries actually read, and regrid every few steps as attention moves.
+
+- **Gap it attacks**: Gap L1-1. Every current scheme fixes each token's precision when the token leaves the recent window: by token, head or layer type (ThinKV [2510.01290], KVarN [2606.03458], OSCAR [2605.17757]), or by a static per-channel salience. A long CoT keeps coming back to spans that looked unremarkable when they were written: the intermediate result being checked, the case being re-verified. Heads also change what they read as generation goes on [2610.02713]. At 2 bits those spans are read through 2-bit noise, and a minority of requests run away (Qwen3-8B AIME25 cap hits rise from 11% to 42% under OSCAR INT2 [2609.38121]). The only remedies today are a stored FP16 copy in CPU RAM (Runtime-Certified [2605.20868]), keeping all 8 bits resident (ReadKV [2610.11245]), upgrading the whole request, or restarting from scratch in high precision [2606.02011]. Closing the gap would keep INT2's batch size while giving the read path near-FP8 fidelity, which matters because runaways dominate cost per correct answer at memory saturation.
+
+- **Source inspiration**: Block-structured adaptive mesh refinement, as packaged in AMReX [2009.12009] (computational physics), with selective reliability [1206.1390] (HPC fault tolerance) as the correctness discipline. Novelty type: recombination-of-distant-concepts.
+  - In AMR a coarse level covers the whole domain. Finer levels are small rectangular patches, for example 12.5% and 6.25% of the domain in AMReX's Rayleigh-Taylor runs.
+  - At user-set intervals (every 2 steps in that benchmark), an error estimate tags cells, and tagged cells are clustered into patches.
+  - A new fine patch gets its boundary (ghost cells) from the coarse level and is then advanced locally. Coarse data are fetched only where fine data do not exist, and restriction later writes fine results back onto the coarse level [2009.12009, Sections 5.2, 6.1, 6.4].
+  - It works because resolution is needed only where the solution is currently changing, and a patch can be computed locally from coarse boundary data instead of re-solving the whole domain.
+  - Selective reliability adds the operating rule: keep most data and compute in the cheap, unreliable mode, keep a small reliable core, and at the end of every inner phase "refresh the correct values ... even if no faults were detected there" [1206.1390, Sections 5.2, 7.3.4, 7.4].
+
+- **How it maps to this problem**:
+  - **Coarse level.** The paged INT2 cache (OSCAR-style rotation, BF16 sinks and recent window) covers the whole trace. The always-reliable core is the token ids (4 bytes per token) plus the weights.
+  - **Fine patches.** Each request holds a small pool of FP8 page runs, with spans as the unit (page-aligned groups of tokens).
+  - **Error estimate / tagging.** The split-KV decode kernel already computes per-split softmax partial sums for its final merge. Exposing them gives, nearly for free, how much attention mass the current queries put on each page, aggregated over the GQA group, as Runtime-Certified does for its high-mass blocks [2605.20868]. Pages that keep receiving mass over a short horizon are tagged, and tagged pages are clustered into contiguous spans.
+  - **Refine.** A tagged span is filled by local re-solve with coarse boundary data. It is pushed through the model as an ordinary chunked prefill whose prefix is the request's current mixed-precision cache, the same "prefill against a cached prefix" path that prefix caching already uses in SGLang. Its new K/V overwrite the span's pages in FP8 instead of being appended. Cost scales with span length times context length read at INT2, not with the trace squared, and tokens after the span are untouched.
+  - **Coarsen.** When a span stops receiving mass it is requantized to INT2, which needs only the FP8 values in hand. Because it is requantized from freshly recomputed values, the drifted write-time values are also refreshed, in the selective-reliability sense.
+  - **What runs on the GPU.** The normal INT2 decode batch serves hundreds of requests. In the tensor-core slack of every step, a refinement lane runs one fused prefill chunk drawn from a global queue of tagged spans across all requests. Precision becomes a fluid working set regridded every few steps, not a label fixed at write time.
+  - **Free by-products.**
+    - (a) Each refinement yields the span's measured INT2 error, the difference between recomputed and stored values, per head. Multiplied by attention mass, it becomes an exact "error x read mass" priority that sharpens the next regrid, the way AMR's estimate improves on refined patches.
+    - (b) On an n-gram loop detection [2606.02011], the loop's induction-style attention already points at the span being copied. Truncating to loop onset only frees pages. The copied-from spans are force-tagged and refined, and decoding resumes from the onset instead of restarting.
+
+- **Why it could work / feasibility**:
+  - **The read path may be what matters.** Pure quantization inflates reasoning length up to 5.1x, while eviction, which keeps whatever is read at full precision and drops the rest, does not inflate length [2510.01290, Section 6.3]. Making the read set high-precision while the rest stays INT2 resembles eviction from the read path's point of view, but nothing is deleted. Runtime-Certified's high-mass FP16 promotion, from a stored copy, recovers near-exact attention with a small promoted set [2605.20868, Sections 3.3-3.4].
+  - **Refinement is cheap and fits idle compute.** Long-context decode is memory-bound regardless of batch [2502.10424, Section 3.1.2]. The incremental cost of linear-layer work rises little with tokens added to a decode step, and prefill and decode linear ops can be fused into one matmul [2308.16369, Sections 3.1, 4.3.1]. A refinement chunk reads the prefix at INT2, so its attention traffic is about one decode step of that request.
+  - **Implementability.** OSCAR already runs INT2 inside SGLang's paged cache with prefix caching and Triton kernels [2605.17757]. The new parts are an FP8 page type, the mass read-out, and an overwrite-instead-of-append prefill.
+  - **Key assumption.** Most of the damage on the read path comes from the 2-bit rounding of the spans being read, not from error already folded into their values through their INT2 context. Re-prefilling against the INT2 prefix removes the former but not the latter.
+
+- **Novelty vs. closest in-domain work** (not novelty-checked):
+  - Runtime-Certified [2605.20868] promotes high-mass blocks from a full FP16 copy held in CPU RAM. ReadKV [2610.11245] varies read depth per query but keeps all 8 bits resident.
+  - ArborKV [2605.22106] re-prefills evicted thought blocks only when tree search backtracks to them.
+  - C3 replays the whole trace periodically.
+  - Here no high-precision copy exists anywhere. Promotion is served by span-local recomputation against the low-bit cache itself, and is regridded continuously from free attention mass.
+
+- **Main risk**: Error propagated through the INT2 context may dominate. Spans re-prefilled against a corrupted prefix would then stay too far from BF16 values to stop runaways, and refinement chunks would compete with decode for compute faster than the attention working set settles.
