@@ -1,0 +1,92 @@
+{
+  "vault:290000928": {
+    "title": "LACE: Lattice Attention for Cross-thread Exploration",
+    "year": 2026, "arxiv_id": "2604.15529",
+    "primary_url": "https://arxiv.org/abs/2604.15529",
+    "digest": "papers/vault-lace.md", "reading_depth": "vault annotation"
+  },
+  "vault:290001863": {
+    "title": "SemantiCache: Efficient KV Cache Compression via Semantic Chunking and Clustered Merging",
+    "year": 2026, "arxiv_id": "2603.14303",
+    "primary_url": "https://arxiv.org/abs/2603.14303",
+    "digest": "papers/vault-semanticache.md", "reading_depth": "vault annotation"
+  },
+  "vault:290005203": {
+    "title": "Meta-Soft: Leveraging Composable Meta-Tokens for Context-Preserving KV Cache Compression",
+    "year": 2026, "arxiv_id": "2605.22337",
+    "primary_url": "https://arxiv.org/abs/2605.22337",
+    "digest": "papers/vault-metasoft.md", "reading_depth": "vault annotation"
+  },
+  "vault:290001140": {
+    "title": "LightThinker++: From Reasoning Compression to Memory Management",
+    "year": 2026, "arxiv_id": "2604.03679",
+    "primary_url": "https://arxiv.org/abs/2604.03679",
+    "digest": "papers/vault-lightthinker.md", "reading_depth": "vault annotation"
+  },
+  "vault-offload-family": {
+    "title": "Composite: SparDA (2606.04511), ScoutAttention (2603.27138), AsyncTLS (2604.07815), OasisKV (2608.08097)",
+    "year": 2026, "arxiv_id": "see composite",
+    "primary_url": "https://arxiv.org/abs/2606.04511",
+    "digest": "papers/vault-offload-family.md", "reading_depth": "vault annotations + abstract"
+  },
+  "web:sdqllm": {
+    "title": "SDQ-LLM: Sigma-Delta Quantization for 1-bit LLMs of any size",
+    "year": 2025, "arxiv_id": "2510.03275",
+    "primary_url": "https://arxiv.org/abs/2510.03275",
+    "digest": "papers/web-sdqllm.md", "reading_depth": "abstract+intro"
+  },
+  "web:kvarn": {
+    "title": "KVarN: Variance-Normalized KV-Cache Quantization Mitigates Error Accumulation in Reasoning Tasks",
+    "year": 2026, "arxiv_id": "2606.03458",
+    "primary_url": "https://arxiv.org/abs/2606.03458",
+    "digest": "papers/web-kvarn.md", "reading_depth": "abstract+sections"
+  },
+  "web:kvlinc": {
+    "title": "KVLinC: KV Cache Quantization with Hadamard Rotation and Linear Correction",
+    "year": 2025, "arxiv_id": "2510.05373",
+    "primary_url": "https://arxiv.org/abs/2510.05373",
+    "digest": "papers/web-kvlinc.md", "reading_depth": "abstract"
+  },
+  "web:latentmas": {
+    "title": "Latent Collaboration in Multi-Agent Systems (LatentMAS)",
+    "year": 2025, "arxiv_id": "2511.20639",
+    "primary_url": "https://arxiv.org/abs/2511.20639",
+    "digest": "papers/web-latentmas.md", "reading_depth": "abstract+paper front"
+  },
+  "web:later": {
+    "title": "LaTER: Efficient Test-Time Reasoning via Latent Exploration and Explicit Verification",
+    "year": 2026, "arxiv_id": "2605.07315",
+    "primary_url": "https://arxiv.org/abs/2605.07315",
+    "digest": "papers/web-later.md", "reading_depth": "abstract+snippets"
+  },
+  "web:tgr": {
+    "title": "The Geometric Reasoner: Manifold-Informed Latent Foresight Search",
+    "year": 2026, "arxiv_id": "2601.18832",
+    "primary_url": "https://arxiv.org/abs/2601.18832",
+    "digest": "papers/web-tgr.md", "reading_depth": "abstract+method snippets"
+  },
+  "web:hogwild": {
+    "title": "Hogwild! Inference: Parallel LLM Generation via Concurrent Attention",
+    "year": 2025, "arxiv_id": "2504.06261",
+    "primary_url": "https://arxiv.org/abs/2504.06261",
+    "digest": "papers/web-hogwild.md", "reading_depth": "citation-level"
+  },
+  "web:stateswap": {
+    "title": "What Attention Recalls and Recurrence Controls in Hybrid Language Models",
+    "year": 2026, "arxiv_id": "2609.04434",
+    "primary_url": "https://arxiv.org/abs/2609.04434",
+    "digest": "papers/web-stateswap.md", "reading_depth": "abstract+method snippets"
+  },
+  "web:kvbuffer": {
+    "title": "KVBuffer: IO-aware Serving for Linear Attention",
+    "year": 2026, "arxiv_id": "2605.19049",
+    "primary_url": "https://arxiv.org/abs/2605.19049",
+    "digest": "papers/web-kvbuffer.md", "reading_depth": "abstract+snippets"
+  },
+  "web:transmamba": {
+    "title": "Composite: TransMamba (2503.24067) + The Mamba in the Llama (2408.15237)",
+    "year": "2024-2025", "arxiv_id": "see composite",
+    "primary_url": "https://arxiv.org/abs/2503.24067",
+    "digest": "papers/web-transmamba.md", "reading_depth": "abstracts"
+  }
+}
