@@ -50,3 +50,44 @@
   - WakeKV [2610.02713] reacts to misses rather than certifying no-miss.
 
 - **Main risk**: The Cauchy-Schwarz-style bound may be too loose. Real query drift is spread across many dimensions while the bound assumes worst-case alignment with each page's largest key. If so, certificates expire almost every step, and the mechanism degenerates into a per-step scan like Quest with extra bookkeeping. The fix (per-band or key-principal-subspace norms) might not tighten it enough on reasoning heads that genuinely shift focus often [2610.02713].
+
+
+### C2 — Coalescent Swarm: resampled long-CoT branches whose path degeneracy becomes free KV sharing, with precision set by page refcount
+- **Intuition**: Run hundreds of reasoning branches for one problem as a particle filter: at each fork point, branches that are looping or unconfident are killed and their slots are refilled by copy-on-write forks of surviving branches. In statistics this resampling makes lineages merge into one shared "trunk" plus a short "crown" of recent branches, a known defect called path degeneracy. Here it is the mechanism: the swarm's KV becomes one high-precision trunk that every branch reads at once, plus short private 2-bit tips. Memory then grows like trunk length plus a small crown, not N x trace length.
+- **Gap it attacks**: Gap L2-1. Today, N parallel branches cost N full KV caches. A branch that fails cannot take over another branch's partial progress. A branch that runs away keeps its whole budget, and at 2 bits runaways rise from 11% to 42% of requests on Qwen3-8B AIME25 [2609.38121]. By my back-of-envelope count, one 32K-token BF16 Qwen3-8B trace needs about 4.7 GB of KV, so an H200 holds only about 25 independent branches. If memory followed trunk plus crown, the same GPU could hold hundreds of branches per problem, and each extra branch would cost little attention bandwidth. That raises the main test-time-scaling lever, branches per GPU-second, by an order of magnitude.
+- **Source inspiration**: Computational statistics and population genetics, combined with an inference-systems primitive. (recombination-of-distant-concepts)
+  - Jacob, Murray and Rubenthaler [1307.3180] show why the trunk forms. Resampling makes particle paths coalesce, so the ancestry tree of N particles over T steps is one trunk plus a crown whose size does not depend on T. The expected stored size is bounded by T + C·N·log N, not T x N. Their storage scheme inserts each new generation into freed slots and prunes nodes with no living descendant using offspring counts, which is reference-counted copy-on-write.
+  - Koskela et al. [1804.01811] show what controls the merging. The pair-merger rate per generation equals the inverse effective sample size of the weights, so how unequal the weights are sets how fast lineages merge. The genealogy follows Kingman's coalescent and can be predicted before the run.
+  - Hydragen [2402.05099] is the changed cost profile. With tree-shaped prefix sharing, the queries of all descendants attend to a shared node's KV in one matrix-matrix pass, so shared KV is read once instead of N times. The gain is largest exactly when shared prefixes are long and private suffixes are short. Paged attention alone removes redundant storage, but not redundant reads.
+- **How it maps to this problem**:
+  - Roles in the filter:
+    - A particle is one reasoning branch: its token ids plus its paged KV blocks.
+    - A generation is a chunk of decoding that ends at a high-entropy fork token such as "wait" or "however", where reasoning directions actually split [2506.01939], or after a fixed token count.
+    - A particle's weight comes from by-products the decoder already produces. A loop or n-gram-repetition detector gives zero weight, so runaways are culled; loop rate tracks 2-bit accuracy loss with r = -0.85 [2606.02011]. The chunk's token confidence sets the remaining weight, and a PRM can be added optionally [2608.15797].
+  - Resampling is pure block-table surgery. Offspring point at the parent's KV pages, which raises their reference counts, and dead branches' private pages are freed. Paged-KV reference counts play exactly the role of the offspring counts in the storage algorithm of [1307.3180], so no KV is copied.
+  - Diversity protection: so that selection does not pour every slot into one mode, survivors are drawn with SwarmEvolve's free diversity filter, farthest-point selection on each branch's mean hidden state over the chunk [2611.08483].
+  - The memory dial is selection pressure. Because inverse ESS is the merger rate [1804.01811], the scheduler sets the sharpness of the weights (a resampling temperature) to hit a target KV footprint for the crown.
+  - Precision follows genealogy, using a second free by-product, the page reference count.
+    - A freshly written private page has count 1 and is likely to die, so it is stored at 2 bits.
+    - When a chunk becomes ancestral to many live branches, it is re-prefilled from its token ids at FP8. The recompute is exact, attends only to its already-FP8 ancestors, and is a short compute-bound batched prefill whose cost is shared by all descendants. Cheap exact recompute from token ids is the same primitive ArborKV uses for rehydration [2605.22106].
+    - The trunk is read once per step for all branches by tree-shaped Hydragen attention.
+    - This replaces the seed's "precision by role" with "precision by how many live branches depend on this page".
+  - What runs on the GPU:
+    - One decode batch of N = 128-512 branch queries per problem.
+    - The attention kernel makes one matrix-matrix pass of all N queries over the FP8 trunk pages, then per-node passes over the small crown tree, then each branch's own 2-bit tip.
+    - At each chunk boundary, a tiny step computes weights from logits and hidden states already in memory, picks offspring and rewrites block tables. It also queues a short FP8 re-prefill for chunks whose reference count just crossed the promotion threshold.
+  - Final answer: the vote is weighted by genealogy. The ancestry tree is a free record of which answers are correlated, so answers from branches that share a recent ancestor count as fewer independent votes.
+- **Why it could work / feasibility**:
+  - Coalescence is guaranteed when weights vary [1307.3180, 1804.01811], and the crown size can be predicted from the ESS [1804.01811]. If weights are uniform, nothing merges and the method falls back to ordinary independent sampling, so the downside is bounded.
+  - Shared-prefix tree attention gives exactly the trunk-and-crown shape the most benefit, and tree sharing is already supported [2402.05099].
+  - Runaway and degenerate traces are detectable online with cheap entropy, gzip and n-gram signals [2606.02011, 2608.15797], so a 2-bit tip that starts looping is culled before it eats its budget.
+  - 2-bit damage comes from a long low-precision context. Here each branch's context is mostly the FP8 trunk with only a short 2-bit tip; OSCAR already keeps sinks and a recent window in BF16 for similar reasons [2609.38121].
+  - Implementation reuses existing vLLM and SGLang parts: paged blocks with reference counts, forked parallel sampling and prefix caching. Tree-shared attention exists as a kernel family [2402.05099].
+  - Key assumption: chunk-level self-signals rank partial long-CoT traces well enough that selecting on them does not cost more accuracy, through lost diversity and correlated votes, than the extra branches and culled runaways gain.
+- **Novelty vs. closest in-domain work**: (not novelty-checked)
+  - SwarmEvolve [2611.08483] shares only a parent program's KV among short 40-step latent agents, which stay independent. It has no resampling of long decoded chains, no trunk-plus-crown memory law, and no precision set by sharing.
+  - ArborKV [2605.22106] manages a tree that a search controller sets, by evicting and rehydrating. It does not use selection-driven coalescence or per-page precision.
+  - KV-Rescue [2608.15797] does PRM-guided stepwise best-of-N with pruning of degenerate candidates, but makes no KV-sharing or precision argument.
+  - Multiverse [2506.09991] merges branches without reducing total KV.
+  - Particle-filter or SMC test-time scaling for LLMs exists outside papers/ and has not been checked.
+- **Main risk**: Coalescence can collapse diversity. If confidence-style weights are miscalibrated on long CoT, selection funnels every branch into one confident but wrong trunk, and the genealogy-weighted vote ends up worse than independent sampling despite having more branches.
