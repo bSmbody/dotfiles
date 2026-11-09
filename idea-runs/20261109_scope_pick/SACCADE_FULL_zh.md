@@ -308,6 +308,7 @@ Qwen-VL 给每个视觉 token 一个二维坐标（第几行、第几列），�
 | 不压缩 | 原分辨率、整图缩小 | E1、E3、E4 |
 | 追加式再看 | DeepEyes、FoveateR、ViCrop、ZoomEye | E3、E4 |
 | 复用或切换视觉 KV | PRCR、ViMoD | E3 |
+| 上下文层面限制视觉证据数量 | VLM-in-Sandbox 2609.24362（图像台账 + 有界的活跃视觉上下文，按整张图提升或移出） | E3、E4 |
 | 开头一次性混合分辨率 | Foveated Compression | E1、E3 |
 | 视觉 KV 压缩（可与本方法叠加） | VisionPulse、2-bit 视觉 KV | E4 |
 | 视频 | 均匀抽帧、粗看再放大的智能体 | E5 |
